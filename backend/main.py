@@ -76,6 +76,9 @@ def load_all_artifacts():
                     "is_severe_weather": 0,
                     "svi_score": 0.5, "zone_baseline_avg": 5.0,
                     "high_acuity_ratio": 0.23, "held_ratio": 0.07,
+                    "is_holiday": 0, "is_major_event": 0, "is_school_day": 1,
+                    "is_heat_emergency": 0, "is_extreme_heat": 0,
+                    "subway_disruption_idx": 0.5,
                 }])
                 _ = obj.predict(dummy)
 
