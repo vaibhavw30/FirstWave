@@ -25,7 +25,7 @@ export default function ResponseHistogram({ data }) {
   ], [data]);
 
   const layout = useMemo(() => ({
-    height: 190,
+    height: 210,
     margin: { l: 35, r: 10, t: 5, b: 30 },
     paper_bgcolor: 'transparent',
     plot_bgcolor: 'transparent',
@@ -56,7 +56,7 @@ export default function ResponseHistogram({ data }) {
   }), []);
 
   return (
-    <div style={{ flex: '0 0 35%', padding: '0 8px' }}>
+    <div style={{ flex: '1 1 0', padding: '0 8px' }}>
       <div style={{ fontSize: 11, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Response Time Distribution</div>
       <Plot data={plotData} layout={layout} config={{ displayModeBar: false, staticPlot: true }} style={{ width: '100%' }} />
     </div>

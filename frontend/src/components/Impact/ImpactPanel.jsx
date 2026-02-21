@@ -1,6 +1,5 @@
 import CoverageBars from './CoverageBars';
 import ResponseHistogram from './ResponseHistogram';
-import EquityChart from './EquityChart';
 
 export default function ImpactPanel({ data, isLoading }) {
   if (isLoading) {
@@ -27,7 +26,6 @@ export default function ImpactPanel({ data, isLoading }) {
     }}>
       <CoverageBars data={data} />
       <ResponseHistogram data={data} />
-      <EquityChart data={data} />
     </div>
   );
 }

@@ -50,6 +50,12 @@ FEATURE_COLS = [
     "zone_baseline_avg",
     "high_acuity_ratio",
     "held_ratio",
+    "is_holiday",
+    "is_major_event",
+    "is_school_day",
+    "is_heat_emergency",
+    "is_extreme_heat",
+    "subway_disruption_idx",
 ]
 
 SEVERE_WEATHER_CODES = {51, 53, 55, 61, 63, 65, 71, 73, 75, 77, 80, 81, 82, 85, 86, 95, 96, 99}
@@ -123,6 +129,12 @@ class DemandForecaster:
                 "zone_baseline_avg": baseline,
                 "high_acuity_ratio": high_acuity,
                 "held_ratio": held,
+                "is_holiday":            0,
+                "is_major_event":        0,
+                "is_school_day":         1,
+                "is_heat_emergency":     int(temperature >= 35.0),
+                "is_extreme_heat":       int(temperature >= 35.0),
+                "subway_disruption_idx": 0.5,
             })
 
         df = pd.DataFrame(rows)
