@@ -11,7 +11,7 @@ export default function DayPicker({ value, onChange }) {
             onClick={() => onChange(i)}
             style={{
               flex: 1,
-              padding: '6px 0',
+              padding: '8px 0',
               fontSize: 11,
               fontWeight: value === i ? 700 : 400,
               color: value === i ? '#fff' : '#888',

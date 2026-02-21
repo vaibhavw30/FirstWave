@@ -11,7 +11,11 @@ const fillLayer = {
       0.6, '#FB8C00',
       1.0, '#C62828'
     ],
-    'fill-opacity': 0.70,
+    'fill-opacity': [
+      'case',
+      ['>', ['get', 'normalized_intensity'], 0.8], 0.75,
+      0.60
+    ],
     'fill-color-transition': { duration: 300 },
   },
 };
@@ -23,6 +27,7 @@ const outlineLayer = {
     'line-color': '#ffffff',
     'line-width': 0.8,
     'line-opacity': 0.4,
+    'line-blur': 0.5,
   },
 };
 

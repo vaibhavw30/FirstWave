@@ -29,10 +29,10 @@ export default function ZoneTooltip({ info }) {
           width: 12, height: 12, borderRadius: 2,
           background: intensityColor(intensity || 0),
         }} />
-        <span>Predicted: <b>{typeof p.predicted_count === 'string' ? parseFloat(p.predicted_count).toFixed(1) : p.predicted_count?.toFixed?.(1) ?? '—'}</b> calls/hr</span>
+        <span>Predicted: <b style={{ fontFamily: "'DM Mono', monospace" }}>{typeof p.predicted_count === 'string' ? parseFloat(p.predicted_count).toFixed(1) : p.predicted_count?.toFixed?.(1) ?? '—'}</b> calls/hr</span>
       </div>
-      <div>SVI: <b>{p.svi_score}</b></div>
-      <div>Avg Response: <b>{formatSeconds(typeof p.historical_avg_response_sec === 'string' ? parseFloat(p.historical_avg_response_sec) : p.historical_avg_response_sec)}</b></div>
+      <div>SVI: <b style={{ fontFamily: "'DM Mono', monospace" }}>{p.svi_score}</b></div>
+      <div>Avg Response: <b style={{ fontFamily: "'DM Mono', monospace" }}>{formatSeconds(typeof p.historical_avg_response_sec === 'string' ? parseFloat(p.historical_avg_response_sec) : p.historical_avg_response_sec)}</b></div>
     </div>
   );
 }

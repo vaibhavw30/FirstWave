@@ -5,7 +5,7 @@ export default function TimeSlider({ value, onChange }) {
     <div style={{ marginBottom: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
         <label style={{ fontSize: 11, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1 }}>Hour</label>
-        <span style={{ fontSize: 13, fontWeight: 600, color: '#42A5F5' }}>{formatHour(value)}</span>
+        <span style={{ fontSize: 18, fontWeight: 600, color: '#42A5F5', fontFamily: "'DM Mono', monospace" }}>{formatHour(value)}</span>
       </div>
       <input
         type="range"
