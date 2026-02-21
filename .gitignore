@@ -1,0 +1,45 @@
+# Credentials & secrets — NEVER commit these
+.env
+.env.*
+*.env
+backend/.env
+frontend/.env
+
+# Pipeline intermediate data (large parquets ~500MB — never commit)
+pipeline/data/
+
+# Large model artifacts (committed manually after training)
+# backend/artifacts/*.pkl  ← uncomment if pkl files are too large for git
+# backend/artifacts/*.parquet
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Node / frontend
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Claude Code internal
+.claude/settings.local.json

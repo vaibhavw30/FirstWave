@@ -662,21 +662,28 @@ VITE_API_BASE_URL=http://localhost:8000
 **Mapbox token scopes needed:** STYLES:TILES, STYLES:READ, FONTS:READ,
 DATASETS:READ, VISION:READ. No secret scopes needed.
 
-### Databricks
+### Pipeline (local — runs on Ashwin's machine)
 
-```
-URL: community.cloud.databricks.com
-Cluster: firstwave-cluster, ML Runtime 14.x
-Terminate after: 120 minutes idle
-DBFS root: dbfs:/firstwave/
+```bash
+git checkout feat/pipeline
+pip install -r pipeline/requirements.txt
+
+# Download EMS CSV (~2GB):
+# https://data.cityofnewyork.us/api/views/76xm-jjuj/rows.csv?accessType=DOWNLOAD
+
+# Run in order:
+python pipeline/06_osmnx_matrix.py &           # start first (30-60 min background)
+python pipeline/01_ingest_clean.py --csv ~/Downloads/ems_raw.csv
+python pipeline/02_weather_merge.py
+python pipeline/03_spatial_join.py
+python pipeline/04_aggregate.py
+python pipeline/05_train_demand_model.py
+python pipeline/07_staging_optimizer.py        # validation only
+python pipeline/08_counterfactual_precompute.py
 ```
 
-Install in notebook cells:
-
-```python
-%pip install osmnx geopandas
-dbutils.library.restartPython()
-```
+Intermediate parquets go to `pipeline/data/` (gitignored, ~500MB).
+Artifacts are written directly to `backend/artifacts/`.
 
 ---
 
@@ -875,10 +882,8 @@ the point where survival probability drops ~65% vs a 4-minute response.
 | Frontend | react-map-gl          | 7.1.7              |
 | Frontend | Mapbox GL JS          | 3.3.0              |
 | Frontend | Plotly.js             | 2.30.0             |
-| Pipeline | Databricks ML Runtime | 14.x               |
-| Pipeline | Apache Spark          | built into runtime |
-| Pipeline | MLflow                | built into runtime |
-| Pipeline | Delta Lake            | built into runtime |
+| Pipeline | DuckDB                | 0.10+              |
+| Pipeline | Python (local)        | 3.11               |
 
 ---
 

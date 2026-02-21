@@ -1859,17 +1859,20 @@ pyarrow==16.0.0
 python-dotenv==1.0.1
 ```
 
-### Databricks Pipeline (pre-installed on ML Runtime 14.x)
+### Local Pipeline (install via pipeline/requirements.txt)
 
 ```
-pyspark (built-in)
-mlflow (built-in)
-xgboost (built-in)
-scikit-learn (built-in)
-pandas (built-in)
-numpy (built-in)
-# Install in notebook:
-# %pip install osmnx geopandas
+duckdb>=0.10.0       # fast CSV ingest + SQL transforms (replaces PySpark)
+pandas>=2.0.0
+numpy>=1.24.0
+xgboost>=2.0.3
+scikit-learn>=1.4.1
+joblib>=1.3.0
+requests>=2.31.0
+osmnx>=1.9.1
+networkx>=3.2
+pyarrow>=14.0.0      # parquet read/write
+# Install: pip install -r pipeline/requirements.txt
 ```
 
 ### React Frontend

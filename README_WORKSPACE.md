@@ -1,1 +1,1 @@
-Ashwin's workspace — feat/backend branch — owns backend/ directory only
+Praneel's workspace — feat/pipeline branch — owns databricks_notebooks/ directory only
