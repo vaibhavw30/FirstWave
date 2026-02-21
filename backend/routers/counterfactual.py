@@ -49,23 +49,24 @@ async def get_counterfactual(
         }
 
         if raw_df is not None:
-            subset = raw_df[(raw_df["hour"] == hour) & (raw_df["dayofweek"] == dow)]
-            if not subset.empty and "BOROUGH" in subset.columns:
+            # by_borough: use full dataset for stable borough-level statistics
+            if "borough" in raw_df.columns:
                 for borough in BOROUGH_KEYS:
-                    b = subset[subset["BOROUGH"] == borough]
+                    b = raw_df[raw_df["borough"] == borough]
                     if not b.empty:
                         result["by_borough"][borough] = {
-                            "static": float(b["pct_within_8min_static"].mean()) if "pct_within_8min_static" in b.columns else 0.0,
-                            "staged": float(b["pct_within_8min_staged"].mean()) if "pct_within_8min_staged" in b.columns else 0.0,
-                            "median_saved_sec": float(b["median_seconds_saved"].median()) if "median_seconds_saved" in b.columns else 0.0,
+                            "static": float(b["baseline_within_8min"].mean() * 100) if "baseline_within_8min" in b.columns else 0.0,
+                            "staged": float(b["staged_within_8min"].mean() * 100) if "staged_within_8min" in b.columns else 0.0,
+                            "median_saved_sec": float(b["seconds_saved"].median()) if "seconds_saved" in b.columns else 0.0,
                         }
 
-            if "svi_quartile" in subset.columns:
+            # by_svi_quartile: use full dataset for stable quartile statistics
+            if "svi_quartile" in raw_df.columns:
                 for q in ["Q1", "Q2", "Q3", "Q4"]:
-                    qdata = subset[subset["svi_quartile"] == q]
+                    qdata = raw_df[raw_df["svi_quartile"] == q]
                     if not qdata.empty:
                         result["by_svi_quartile"][q] = {
-                            "median_saved_sec": float(qdata["median_seconds_saved"].median()) if "median_seconds_saved" in qdata.columns else 0.0,
+                            "median_saved_sec": float(qdata["seconds_saved"].median()) if "seconds_saved" in qdata.columns else 0.0,
                         }
 
         # Fall back to mock values if by_borough still empty

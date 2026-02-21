@@ -1,6 +1,6 @@
 export const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
-export const USE_MOCK_DATA = true;
+export const USE_MOCK_DATA = false;
 
 export const VALID_ZONES = [
   'B1','B2','B3','B4','B5',
