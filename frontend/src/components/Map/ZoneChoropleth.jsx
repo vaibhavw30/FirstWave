@@ -1,0 +1,38 @@
+import { Source, Layer } from 'react-map-gl';
+
+const fillLayer = {
+  id: 'zone-fill',
+  type: 'fill',
+  paint: {
+    'fill-color': [
+      'interpolate', ['linear'], ['get', 'normalized_intensity'],
+      0.0, '#00897B',
+      0.3, '#FDD835',
+      0.6, '#FB8C00',
+      1.0, '#C62828'
+    ],
+    'fill-opacity': 0.70,
+    'fill-color-transition': { duration: 300 },
+  },
+};
+
+const outlineLayer = {
+  id: 'zone-outline',
+  type: 'line',
+  paint: {
+    'line-color': '#ffffff',
+    'line-width': 0.8,
+    'line-opacity': 0.4,
+  },
+};
+
+export default function ZoneChoropleth({ data }) {
+  if (!data || !data.features || data.features.length === 0) return null;
+
+  return (
+    <Source id="zones" type="geojson" data={data}>
+      <Layer {...fillLayer} />
+      <Layer {...outlineLayer} />
+    </Source>
+  );
+}
