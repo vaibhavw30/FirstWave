@@ -114,14 +114,15 @@ print(y_train.describe().to_string())
 
 # ── Step 4: Train XGBoost ─────────────────────────────────────────────────────
 PARAMS = {
-    "n_estimators":    300,
-    "max_depth":       6,
-    "learning_rate":   0.05,
-    "subsample":       0.8,
-    "colsample_bytree":0.8,
-    "random_state":    42,
-    "n_jobs":         -1,
-    "tree_method":    "hist",  # fast on CPU
+    "n_estimators":        300,
+    "max_depth":           6,
+    "learning_rate":       0.05,
+    "subsample":           0.8,
+    "colsample_bytree":    0.8,
+    "random_state":        42,
+    "n_jobs":             -1,
+    "tree_method":        "hist",  # fast on CPU
+    "early_stopping_rounds": 20,   # XGBoost 3.x: moved to constructor
 }
 
 print("\nTraining XGBoost... (this takes 5-10 minutes)")
@@ -129,7 +130,6 @@ model = xgb.XGBRegressor(**PARAMS)
 model.fit(
     X_train, y_train,
     eval_set=[(X_test, y_test)],
-    early_stopping_rounds=20,
     verbose=50,
 )
 

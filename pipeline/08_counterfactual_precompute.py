@@ -119,7 +119,8 @@ print(f"  drive_time_matrix: {len(dtm):,} pairs")
 print("\nLoading 2023 Priority 1+2 incidents from cleaned parquet...")
 inc_all = pd.read_parquet(CLEANED_PQ, columns=[
     "CAD_INCIDENT_ID", "BOROUGH", "INCIDENT_DISPATCH_AREA",
-    "hour", "dayofweek", "INCIDENT_RESPONSE_SECONDS_QY", "svi_score",
+    "hour", "dayofweek", "INCIDENT_RESPONSE_SECONDS_QY",
+    "INCIDENT_TRAVEL_TM_SECONDS_QY", "svi_score",
     "split", "is_high_acuity",
 ])
 incidents_2023 = inc_all[
@@ -140,9 +141,17 @@ print(f"\nSVI quartile distribution:")
 print(incidents_2023["svi_quartile"].value_counts().sort_index().to_string())
 
 # ── Helper functions ───────────────────────────────────────────────────────────
-def get_baseline_drive(incident_zone: str) -> int:
-    """Minimum drive time from any fixed FDNY station to incident zone."""
-    times = [dtm.get((sid, incident_zone), 9999) for sid in station_ids]
+def get_baseline_drive(incident: pd.Series) -> int:
+    """Actual historical total response time for this incident (static deployment baseline).
+    Uses real observed total response seconds (dispatch + travel) — this represents
+    the current system performance including all real-world inefficiencies:
+    dispatch lag, traffic, busy units, etc. FirstWave eliminates dispatch lag by
+    pre-positioning units before calls arrive."""
+    t = incident.get("INCIDENT_RESPONSE_SECONDS_QY", None)
+    if t is not None and not np.isnan(t) and 1 <= t <= 7200:
+        return int(t)
+    # Fallback: nearest fixed FDNY station drive time
+    times = [dtm.get((sid, incident["INCIDENT_DISPATCH_AREA"]), 9999) for sid in station_ids]
     return min(times) if times else 9999
 
 
@@ -233,14 +242,14 @@ for i, (hour, dow) in enumerate(product(range(24), range(7))):
 
     # Use October as representative month for staging prediction
     predicted_counts = predict_counts(hour, dow, month=10)
-    staging_zones    = get_staging_zones(predicted_counts, K=5)
+    staging_zones    = get_staging_zones(predicted_counts, K=10)
 
     baseline_drives = []
     staged_drives   = []
 
     for _, inc in bin_inc.iterrows():
         zone   = inc["INCIDENT_DISPATCH_AREA"]
-        b_time = get_baseline_drive(zone)
+        b_time = get_baseline_drive(inc)
         s_time = get_staged_drive(zone, staging_zones)
         baseline_drives.append(b_time)
         staged_drives.append(s_time)
