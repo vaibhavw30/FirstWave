@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Marker, Popup, Source, Layer } from 'react-map-gl';
 
 function createCircleGeoJSON(lng, lat, radiusM, steps = 64) {
@@ -30,21 +30,48 @@ const coverageStroke = {
   paint: {
     'line-color': 'rgba(66, 165, 245, 0.6)',
     'line-width': 1.5,
+    'line-dasharray': [4, 3],
   },
 };
 
-const DUMMY_UNITS = [
-  { unit: 'EMS-47X', crew: 'Rivera, Chen', status: 'Staged — Idle', eta: '< 4 min' },
-  { unit: 'EMS-23K', crew: 'Okafor, Singh', status: 'Staged — Idle', eta: '< 5 min' },
-  { unit: 'EMS-61A', crew: 'Gutierrez, Park', status: 'Staged — Idle', eta: '< 3 min' },
-  { unit: 'EMS-15R', crew: 'Johnson, Lee', status: 'Staged — Idle', eta: '< 6 min' },
-  { unit: 'EMS-38M', crew: 'Nguyen, Brown', status: 'Staged — Idle', eta: '< 4 min' },
-  { unit: 'EMS-52D', crew: 'Garcia, Kim', status: 'Staged — Idle', eta: '< 5 min' },
-  { unit: 'EMS-09F', crew: 'Patel, Williams', status: 'Staged — Idle', eta: '< 3 min' },
-  { unit: 'EMS-74B', crew: 'Thomas, Zhang', status: 'Staged — Idle', eta: '< 6 min' },
-  { unit: 'EMS-20W', crew: 'Davis, Tanaka', status: 'Staged — Idle', eta: '< 4 min' },
-  { unit: 'EMS-85L', crew: 'Martinez, Ali', status: 'Staged — Idle', eta: '< 5 min' },
-];
+function distributeAmbulances(features, total) {
+  if (!features || features.length === 0) return [];
+  const demands = features.map((f) => f.properties.predicted_demand_coverage || 1);
+  const sumDemand = demands.reduce((a, b) => a + b, 0);
+  const raw = demands.map((d) => (d / sumDemand) * total);
+  const floors = raw.map((r) => Math.floor(r));
+  const remainders = raw.map((r, i) => ({ i, r: r - floors[i] }));
+  let distributed = floors.reduce((a, b) => a + b, 0);
+  remainders.sort((a, b) => b.r - a.r);
+  for (let k = 0; distributed < total && k < remainders.length; k++) {
+    floors[remainders[k].i]++;
+    distributed++;
+  }
+  return floors;
+}
+
+function seededRandom(seed) {
+  let s = seed;
+  return () => {
+    s = (s * 16807 + 0) % 2147483647;
+    return s / 2147483647;
+  };
+}
+
+function generateDotPositions(lng, lat, radiusM, count, seed) {
+  const rng = seededRandom(seed * 7919 + 1);
+  const dots = [];
+  const innerRadius = radiusM * 0.6;
+  const kmInner = innerRadius / 1000;
+  for (let i = 0; i < count; i++) {
+    const angle = rng() * 2 * Math.PI;
+    const dist = Math.sqrt(rng()) * kmInner;
+    const dLat = (dist / 111.32) * Math.cos(angle);
+    const dLng = (dist / (111.32 * Math.cos(lat * Math.PI / 180))) * Math.sin(angle);
+    dots.push([lng + dLng, lat + dLat]);
+  }
+  return dots;
+}
 
 const popupStyle = {
   background: 'rgba(15, 15, 35, 0.95)',
@@ -56,30 +83,46 @@ const popupStyle = {
   color: '#e0e0e0',
 };
 
-export default function StagingPins({ data, showPins, showCoverage }) {
+export default function StagingPins({ data, showPins, showCoverage, ambulanceCount = 5 }) {
   const [selectedPin, setSelectedPin] = useState(null);
 
-  if (!data || !data.features) return null;
+  const features = data?.features || [];
 
-  const circleFeatures = data.features.map((f) => {
-    const [lng, lat] = f.geometry.coordinates;
-    const radius = f.properties.coverage_radius_m || 3500;
-    return createCircleGeoJSON(lng, lat, radius);
-  });
+  const distribution = useMemo(
+    () => distributeAmbulances(features, ambulanceCount),
+    [features, ambulanceCount]
+  );
 
-  const circleCollection = {
-    type: 'FeatureCollection',
-    features: circleFeatures,
-  };
+  const circleCollection = useMemo(() => {
+    const circleFeatures = features.map((f) => {
+      const [lng, lat] = f.geometry.coordinates;
+      const radius = f.properties.coverage_radius_m || 3500;
+      return createCircleGeoJSON(lng, lat, radius);
+    });
+    return { type: 'FeatureCollection', features: circleFeatures };
+  }, [features]);
+
+  const allDots = useMemo(() => {
+    const dots = [];
+    features.forEach((f, i) => {
+      const [lng, lat] = f.geometry.coordinates;
+      const radius = f.properties.coverage_radius_m || 3500;
+      const count = distribution[i] || 0;
+      const positions = generateDotPositions(lng, lat, radius, count, i);
+      positions.forEach((pos) => dots.push({ lng: pos[0], lat: pos[1], zoneIndex: i }));
+    });
+    return dots;
+  }, [features, distribution]);
+
+  if (features.length === 0) return null;
 
   const handlePinClick = (e, index) => {
-    e.originalEvent?.stopPropagation?.();
-    e.stopPropagation?.();
+    if (e.stopPropagation) e.stopPropagation();
+    if (e.originalEvent?.stopPropagation) e.originalEvent.stopPropagation();
     setSelectedPin(selectedPin === index ? null : index);
   };
 
-  const selectedFeature = selectedPin !== null ? data.features[selectedPin] : null;
-  const unitInfo = selectedPin !== null ? DUMMY_UNITS[selectedPin % DUMMY_UNITS.length] : null;
+  const selectedFeature = selectedPin !== null ? features[selectedPin] : null;
 
   return (
     <>
@@ -89,39 +132,76 @@ export default function StagingPins({ data, showPins, showCoverage }) {
           <Layer {...coverageStroke} />
         </Source>
       )}
-      {showPins && data.features.map((f, i) => {
+
+      {/* Zone label pills */}
+      {showPins && features.map((f, i) => {
         const [lng, lat] = f.geometry.coordinates;
+        const count = distribution[i] || 0;
+        const isSelected = selectedPin === i;
         return (
-          <Marker key={i} longitude={lng} latitude={lat} anchor="center">
+          <Marker key={`zone-${i}`} longitude={lng} latitude={lat} anchor="center">
             <div
-              onClick={(e) => handlePinClick({ originalEvent: e, stopPropagation: () => {} }, i)}
+              onClick={(e) => handlePinClick(e, i)}
               style={{
-                width: 32,
-                height: 32,
-                borderRadius: '50%',
-                background: selectedPin === i
-                  ? 'rgba(66, 165, 245, 1)'
-                  : 'rgba(66, 165, 245, 0.9)',
-                border: selectedPin === i ? '2px solid #90caf9' : '2px solid #fff',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 16,
+                gap: 4,
+                padding: '3px 10px',
+                borderRadius: 12,
+                background: isSelected
+                  ? 'rgba(66, 165, 245, 1)'
+                  : 'rgba(66, 165, 245, 0.85)',
+                border: isSelected ? '2px solid #90caf9' : '2px solid rgba(255,255,255,0.7)',
                 cursor: 'pointer',
-                boxShadow: selectedPin === i
+                boxShadow: isSelected
                   ? '0 0 12px rgba(66, 165, 245, 0.6)'
                   : '0 2px 8px rgba(0,0,0,0.4)',
                 transition: 'box-shadow 0.2s, border 0.2s',
+                whiteSpace: 'nowrap',
+                fontFamily: "'DM Mono', monospace",
+                fontSize: 11,
+                fontWeight: 700,
+                color: '#fff',
+                letterSpacing: 0.5,
+              }}
+            >
+              <span>Z{i + 1}</span>
+              <span style={{
+                background: 'rgba(239, 83, 80, 0.9)',
+                borderRadius: 8,
+                padding: '0 5px',
+                fontSize: 10,
+                fontWeight: 700,
+                minWidth: 16,
+                textAlign: 'center',
               }}>
-              🚑
+                {count}
+              </span>
             </div>
           </Marker>
         );
       })}
 
-      {selectedFeature && unitInfo && (() => {
+      {/* Individual ambulance dots */}
+      {showPins && allDots.map((dot, i) => (
+        <Marker key={`dot-${i}`} longitude={dot.lng} latitude={dot.lat} anchor="center">
+          <div style={{
+            width: 8,
+            height: 8,
+            borderRadius: '50%',
+            background: '#EF5350',
+            border: '1.5px solid #fff',
+            boxShadow: '0 0 6px rgba(239, 83, 80, 0.5)',
+            pointerEvents: 'none',
+          }} />
+        </Marker>
+      ))}
+
+      {/* Popup for selected zone */}
+      {selectedFeature && (() => {
         const [lng, lat] = selectedFeature.geometry.coordinates;
         const p = selectedFeature.properties;
+        const count = distribution[selectedPin] || 0;
         return (
           <Popup
             longitude={lng}
@@ -145,7 +225,7 @@ export default function StagingPins({ data, showPins, showCoverage }) {
                   color: '#fff',
                   fontFamily: "'DM Mono', monospace",
                 }}>
-                  {unitInfo.unit}
+                  Staging Zone {selectedPin + 1}
                 </span>
                 <span
                   onClick={() => setSelectedPin(null)}
@@ -162,23 +242,12 @@ export default function StagingPins({ data, showPins, showCoverage }) {
               </div>
 
               <div style={{ marginBottom: 4 }}>
-                Crew: <b style={{ color: '#fff' }}>{unitInfo.crew}</b>
-              </div>
-
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                marginBottom: 4,
-              }}>
-                <div style={{
-                  width: 7,
-                  height: 7,
-                  borderRadius: '50%',
-                  background: '#4caf50',
-                  boxShadow: '0 0 4px rgba(76, 175, 80, 0.6)',
-                }} />
-                <span>{unitInfo.status}</span>
+                Ambulances: <b style={{
+                  color: '#EF5350',
+                  fontFamily: "'DM Mono', monospace",
+                }}>
+                  {count}
+                </b>
               </div>
 
               <div style={{ marginBottom: 4 }}>
@@ -204,7 +273,7 @@ export default function StagingPins({ data, showPins, showCoverage }) {
                   color: '#4caf50',
                   fontFamily: "'DM Mono', monospace",
                 }}>
-                  {unitInfo.eta}
+                  {'< ' + Math.max(3, 8 - count) + ' min'}
                 </b>
               </div>
             </div>

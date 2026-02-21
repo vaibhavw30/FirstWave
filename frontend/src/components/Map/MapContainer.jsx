@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import Map from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { MAPBOX_TOKEN } from '../../constants';
+import DemandHeatmap from './DemandHeatmap';
 import ZoneChoropleth from './ZoneChoropleth';
 import StagingPins from './StagingPins';
 import ZoneTooltip from './ZoneTooltip';
@@ -14,7 +15,7 @@ const INITIAL_VIEW = {
   bearing: 0,
 };
 
-export default function MapContainer({ heatmapData, stagingData, layerVisibility, selectedZone, onZoneClick }) {
+export default function MapContainer({ heatmapData, stagingData, layerVisibility, selectedZone, onZoneClick, ambulanceCount }) {
   const [hoverInfo, setHoverInfo] = useState(null);
 
   const onMouseMove = useCallback((e) => {
@@ -45,17 +46,19 @@ export default function MapContainer({ heatmapData, stagingData, layerVisibility
         initialViewState={INITIAL_VIEW}
         mapboxAccessToken={MAPBOX_TOKEN}
         mapStyle="mapbox://styles/mapbox/dark-v11"
-        interactiveLayerIds={layerVisibility.heatmap ? ['zone-fill'] : []}
+        interactiveLayerIds={layerVisibility.heatmap ? ['zone-fill', 'zip-fill'] : []}
         onMouseMove={onMouseMove}
         onMouseLeave={onMouseLeave}
         onClick={onClick}
         style={{ width: '100%', height: '100%' }}
       >
+        <DemandHeatmap heatmapData={heatmapData} visible={layerVisibility.heatmap} />
         {layerVisibility.heatmap && <ZoneChoropleth data={heatmapData} />}
         <StagingPins
           data={stagingData}
           showPins={layerVisibility.staging}
           showCoverage={layerVisibility.coverage}
+          ambulanceCount={ambulanceCount}
         />
       </Map>
       {hoverInfo && <ZoneTooltip info={hoverInfo} />}
