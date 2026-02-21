@@ -20,7 +20,10 @@
 
 # COMMAND ----------
 
-dbutils.library.restartPython()
+# NOTE: dbutils.library.restartPython() is NOT supported on Databricks Serverless.
+# On Serverless, %pip install takes effect immediately — no restart needed.
+# If you are on a Classic cluster, uncomment the line below:
+# dbutils.library.restartPython()
 
 # COMMAND ----------
 
@@ -36,10 +39,15 @@ import os
 import math
 import numpy as np
 
-ARTIFACTS = "/dbfs/firstwave/artifacts/"
-DATA      = "/dbfs/firstwave/data/"
+# Serverless: no /dbfs/ local mount — use /tmp/ for Python file I/O, dbutils.fs to persist
+DBFS_ARTIFACTS = "dbfs:/firstwave/artifacts"
+DBFS_DATA      = "dbfs:/firstwave/data"
+TMP_ARTIFACTS  = "/tmp/firstwave/artifacts"
+TMP_DATA       = "/tmp/firstwave/data"
 
-os.makedirs(ARTIFACTS, exist_ok=True)
+os.makedirs(TMP_ARTIFACTS, exist_ok=True)
+os.makedirs(TMP_DATA, exist_ok=True)
+dbutils.fs.mkdirs(DBFS_ARTIFACTS)
 
 # COMMAND ----------
 
@@ -132,11 +140,13 @@ def build_haversine_matrix(stations=None) -> dict:
 
 # COMMAND ----------
 
-stations_path = f"{DATA}ems_stations.json"
 stations = []
 
 try:
-    with open(stations_path) as f:
+    # Copy from DBFS to /tmp/ first (Serverless has no /dbfs/ local mount)
+    _stations_tmp = f"{TMP_DATA}/ems_stations.json"
+    dbutils.fs.cp(f"{DBFS_DATA}/ems_stations.json", f"file:{_stations_tmp}")
+    with open(_stations_tmp) as f:
         stations = json.load(f)
     print(f"Loaded {len(stations)} EMS stations from {stations_path}")
     for s in stations[:5]:
@@ -170,10 +180,12 @@ if USE_OSMNX:
         print(f"  Nodes: {len(G.nodes):,}")
         print(f"  Edges: {len(G.edges):,}")
 
-        # Save for potential reuse
+        # Save graph: write to /tmp/ then copy to DBFS (Serverless has no /dbfs/ mount)
         print("\nSaving graph to DBFS...")
-        with open(f"{ARTIFACTS}nyc_graph.pkl", "wb") as f:
+        _graph_tmp = f"{TMP_ARTIFACTS}/nyc_graph.pkl"
+        with open(_graph_tmp, "wb") as f:
             pickle.dump(G, f)
+        dbutils.fs.cp(f"file:{_graph_tmp}", f"{DBFS_ARTIFACTS}/nyc_graph.pkl")
         print("  ✓ nyc_graph.pkl saved")
 
     except Exception as e:
@@ -181,15 +193,16 @@ if USE_OSMNX:
         print("Falling back to Haversine approximation")
         USE_OSMNX = False
 else:
-    # Try to load existing graph from DBFS
-    graph_path = f"{ARTIFACTS}nyc_graph.pkl"
-    if os.path.exists(graph_path):
+    # Try to load existing graph from DBFS via /tmp/
+    _graph_tmp = f"{TMP_ARTIFACTS}/nyc_graph.pkl"
+    try:
+        dbutils.fs.cp(f"{DBFS_ARTIFACTS}/nyc_graph.pkl", f"file:{_graph_tmp}")
         print("Loading existing graph from DBFS...")
-        with open(graph_path, "rb") as f:
+        with open(_graph_tmp, "rb") as f:
             G = pickle.load(f)
         USE_OSMNX = True
         print(f"  ✓ Loaded: {len(G.nodes):,} nodes, {len(G.edges):,} edges")
-    else:
+    except Exception:
         print("No existing graph found — using Haversine fallback")
 
 # COMMAND ----------
@@ -214,8 +227,10 @@ if USE_OSMNX:
 
     print(f"\n✓ Mapped {len(zone_nodes)}/{len(ZONE_CENTROIDS)} zones")
 
-    with open(f"{ARTIFACTS}zone_nodes.pkl", "wb") as f:
+    _zn_tmp = f"{TMP_ARTIFACTS}/zone_nodes.pkl"
+    with open(_zn_tmp, "wb") as f:
         pickle.dump(zone_nodes, f)
+    dbutils.fs.cp(f"file:{_zn_tmp}", f"{DBFS_ARTIFACTS}/zone_nodes.pkl")
     print("  zone_nodes.pkl saved")
 
     # Map EMS stations
@@ -228,8 +243,10 @@ if USE_OSMNX:
         except Exception as e:
             print(f"  ⚠️  {s['station_id']}: {e}")
 
-    with open(f"{ARTIFACTS}station_nodes.pkl", "wb") as f:
+    _sn_tmp = f"{TMP_ARTIFACTS}/station_nodes.pkl"
+    with open(_sn_tmp, "wb") as f:
         pickle.dump(station_nodes, f)
+    dbutils.fs.cp(f"file:{_sn_tmp}", f"{DBFS_ARTIFACTS}/station_nodes.pkl")
     print(f"  ✓ Mapped {len(station_nodes)}/{len(stations)} stations")
 
 # COMMAND ----------
@@ -303,11 +320,13 @@ else:
 
 # COMMAND ----------
 
-matrix_path = f"{ARTIFACTS}drive_time_matrix.pkl"
-with open(matrix_path, "wb") as f:
+_matrix_tmp = f"{TMP_ARTIFACTS}/drive_time_matrix.pkl"
+with open(_matrix_tmp, "wb") as f:
     pickle.dump(drive_time_matrix, f)
+dbutils.fs.cp(f"file:{_matrix_tmp}", f"{DBFS_ARTIFACTS}/drive_time_matrix.pkl")
 
-print(f"✓ drive_time_matrix.pkl saved: {len(drive_time_matrix):,} pairs")
+print(f"✓ drive_time_matrix.pkl saved to {DBFS_ARTIFACTS}/drive_time_matrix.pkl")
+print(f"  Pairs: {len(drive_time_matrix):,}")
 
 # COMMAND ----------
 

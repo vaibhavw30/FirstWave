@@ -16,16 +16,17 @@
 # COMMAND ----------
 
 import math
+import os
 from pyspark.sql import functions as F
 
 DELTA_AGGD     = "dbfs:/firstwave/delta/incidents_aggregated"
-ARTIFACTS      = "dbfs:/firstwave/artifacts/"
-BASELINES_PATH = "/dbfs/firstwave/artifacts/zone_baselines.parquet"
-STATS_PATH     = "/dbfs/firstwave/artifacts/zone_stats.parquet"
+DBFS_ARTIFACTS = "dbfs:/firstwave/artifacts"
+TMP_ARTIFACTS  = "/tmp/firstwave/artifacts"
 
-# Ensure artifact directory exists
-import os
-os.makedirs("/dbfs/firstwave/artifacts/", exist_ok=True)
+# Serverless: /dbfs/ mount doesn't exist — use /tmp/ for local file I/O,
+# then dbutils.fs.cp to DBFS for persistence
+os.makedirs(TMP_ARTIFACTS, exist_ok=True)
+dbutils.fs.mkdirs(DBFS_ARTIFACTS)
 
 # COMMAND ----------
 
@@ -128,8 +129,10 @@ max_expected = 31 * 24 * 7  # 5,208
 print(f"Zone baselines: {baseline_count} rows (max possible: {max_expected})")
 
 # Write to DBFS as Parquet
-zone_baselines.toPandas().to_parquet(BASELINES_PATH, index=False)
-print(f"zone_baselines.parquet written to {BASELINES_PATH}")
+_bl_tmp = f"{TMP_ARTIFACTS}/zone_baselines.parquet"
+zone_baselines.toPandas().to_parquet(_bl_tmp, index=False)
+dbutils.fs.cp(f"file:{_bl_tmp}", f"{DBFS_ARTIFACTS}/zone_baselines.parquet")
+print(f"zone_baselines.parquet written to {DBFS_ARTIFACTS}/zone_baselines.parquet")
 
 # COMMAND ----------
 
@@ -152,8 +155,10 @@ stats_count = zone_stats.count()
 print(f"Zone stats: {stats_count} rows (expect 31)")
 
 # Write to DBFS as Parquet
-zone_stats.toPandas().to_parquet(STATS_PATH, index=False)
-print(f"zone_stats.parquet written to {STATS_PATH}")
+_st_tmp = f"{TMP_ARTIFACTS}/zone_stats.parquet"
+zone_stats.toPandas().to_parquet(_st_tmp, index=False)
+dbutils.fs.cp(f"file:{_st_tmp}", f"{DBFS_ARTIFACTS}/zone_stats.parquet")
+print(f"zone_stats.parquet written to {DBFS_ARTIFACTS}/zone_stats.parquet")
 
 # COMMAND ----------
 
@@ -163,8 +168,9 @@ print(f"zone_stats.parquet written to {STATS_PATH}")
 
 import pandas as pd
 
-baselines_pd = pd.read_parquet(BASELINES_PATH)
-stats_pd     = pd.read_parquet(STATS_PATH)
+# Read back via Spark (works on Serverless — no /dbfs/ mount needed)
+baselines_pd = spark.read.parquet(f"{DBFS_ARTIFACTS}/zone_baselines.parquet").toPandas()
+stats_pd     = spark.read.parquet(f"{DBFS_ARTIFACTS}/zone_stats.parquet").toPandas()
 
 print("=" * 55)
 print("  NOTEBOOK 04 — VALIDATION")
@@ -203,8 +209,8 @@ print("  ← Check: B1, B2, B3 should dominate highest zone_baseline_avg")
 
 print()
 print("  DBFS artifacts written:")
-print(f"    {BASELINES_PATH}")
-print(f"    {STATS_PATH}")
+print(f"    {DBFS_ARTIFACTS}/zone_baselines.parquet")
+print(f"    {DBFS_ARTIFACTS}/zone_stats.parquet")
 print()
 print("  Download these + demand_model.pkl after Notebook 05 and commit to backend/artifacts/")
 print("=" * 55)

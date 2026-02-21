@@ -29,8 +29,15 @@ from sklearn.cluster import KMeans
 import math
 from itertools import product
 
-ARTIFACTS = "/dbfs/firstwave/artifacts/"
-DATA      = "/dbfs/firstwave/data/"
+# Serverless: no /dbfs/ mount — use /tmp/ for local file I/O, dbutils.fs for persistence
+DBFS_ARTIFACTS = "dbfs:/firstwave/artifacts"
+DBFS_DATA      = "dbfs:/firstwave/data"
+TMP_ARTIFACTS  = "/tmp/firstwave/artifacts"
+TMP_DATA       = "/tmp/firstwave/data"
+
+import os
+os.makedirs(TMP_ARTIFACTS, exist_ok=True)
+os.makedirs(TMP_DATA, exist_ok=True)
 
 THRESHOLD            = 480   # 8-minute clinical target in seconds
 MAX_INCIDENTS_PER_BIN = 150  # cap per (hour, dow) bin for compute speed
@@ -82,14 +89,25 @@ VALID_ZONES = list(ZONE_CENTROIDS.keys())
 
 print("Loading artifacts...")
 
-model      = joblib.load(f"{ARTIFACTS}demand_model.pkl")
-baselines  = pd.read_parquet(f"{ARTIFACTS}zone_baselines.parquet")
-zone_stats = pd.read_parquet(f"{ARTIFACTS}zone_stats.parquet")
+# Copy pkl files from DBFS to /tmp/ (Serverless has no /dbfs/ local mount)
+_model_tmp  = f"{TMP_ARTIFACTS}/demand_model.pkl"
+_dtm_tmp    = f"{TMP_ARTIFACTS}/drive_time_matrix.pkl"
+_stn_tmp    = f"{TMP_DATA}/ems_stations.json"
 
-with open(f"{ARTIFACTS}drive_time_matrix.pkl", "rb") as f:
+dbutils.fs.cp(f"{DBFS_ARTIFACTS}/demand_model.pkl",      f"file:{_model_tmp}")
+dbutils.fs.cp(f"{DBFS_ARTIFACTS}/drive_time_matrix.pkl", f"file:{_dtm_tmp}")
+dbutils.fs.cp(f"{DBFS_DATA}/ems_stations.json",          f"file:{_stn_tmp}")
+
+model = joblib.load(_model_tmp)
+
+# Read parquets via Spark
+baselines  = spark.read.parquet(f"{DBFS_ARTIFACTS}/zone_baselines.parquet").toPandas()
+zone_stats = spark.read.parquet(f"{DBFS_ARTIFACTS}/zone_stats.parquet").toPandas()
+
+with open(_dtm_tmp, "rb") as f:
     dtm = pickle.load(f)
 
-with open(f"{DATA}ems_stations.json") as f:
+with open(_stn_tmp) as f:
     stations = json.load(f)
 
 station_ids = [s["station_id"] for s in stations]
@@ -297,11 +315,18 @@ raw_df     = pd.DataFrame(raw_rows)
 summary_path = f"{ARTIFACTS}counterfactual_summary.parquet"
 raw_path     = f"{ARTIFACTS}counterfactual_raw.parquet"
 
-summary_df.to_parquet(summary_path, index=False)
-raw_df.to_parquet(raw_path, index=False)
+# Write to /tmp/ then copy to DBFS (Serverless has no /dbfs/ local mount)
+_summary_tmp = f"{TMP_ARTIFACTS}/counterfactual_summary.parquet"
+_raw_tmp     = f"{TMP_ARTIFACTS}/counterfactual_raw.parquet"
 
-print(f"✓ counterfactual_summary.parquet: {len(summary_df)} rows → {summary_path}")
-print(f"✓ counterfactual_raw.parquet:     {len(raw_df):,} rows → {raw_path}")
+summary_df.to_parquet(_summary_tmp, index=False)
+raw_df.to_parquet(_raw_tmp, index=False)
+
+dbutils.fs.cp(f"file:{_summary_tmp}", f"{DBFS_ARTIFACTS}/counterfactual_summary.parquet")
+dbutils.fs.cp(f"file:{_raw_tmp}",     f"{DBFS_ARTIFACTS}/counterfactual_raw.parquet")
+
+print(f"✓ counterfactual_summary.parquet: {len(summary_df)} rows → {DBFS_ARTIFACTS}/counterfactual_summary.parquet")
+print(f"✓ counterfactual_raw.parquet:     {len(raw_df):,} rows → {DBFS_ARTIFACTS}/counterfactual_raw.parquet")
 
 # COMMAND ----------
 

@@ -23,7 +23,11 @@ import numpy as np
 from sklearn.cluster import KMeans
 import math
 
-ARTIFACTS = "/dbfs/firstwave/artifacts/"
+# Serverless: use /tmp/ for local file I/O, load from DBFS via dbutils.fs.cp
+DBFS_ARTIFACTS = "dbfs:/firstwave/artifacts"
+TMP_ARTIFACTS  = "/tmp/firstwave/artifacts"
+import os
+os.makedirs(TMP_ARTIFACTS, exist_ok=True)
 
 # COMMAND ----------
 
@@ -76,9 +80,15 @@ VALID_ZONES = list(ZONE_CENTROIDS.keys())
 # COMMAND ----------
 
 print("Loading artifacts...")
-model      = joblib.load(f"{ARTIFACTS}demand_model.pkl")
-baselines  = pd.read_parquet(f"{ARTIFACTS}zone_baselines.parquet")
-zone_stats = pd.read_parquet(f"{ARTIFACTS}zone_stats.parquet")
+
+# Copy pkl from DBFS to /tmp/ first (Serverless has no /dbfs/ mount)
+_model_tmp = f"{TMP_ARTIFACTS}/demand_model.pkl"
+dbutils.fs.cp(f"{DBFS_ARTIFACTS}/demand_model.pkl", f"file:{_model_tmp}")
+model = joblib.load(_model_tmp)
+
+# Read parquets via Spark
+baselines  = spark.read.parquet(f"{DBFS_ARTIFACTS}/zone_baselines.parquet").toPandas()
+zone_stats = spark.read.parquet(f"{DBFS_ARTIFACTS}/zone_stats.parquet").toPandas()
 
 print(f"  ✓ demand_model.pkl loaded")
 print(f"  ✓ zone_baselines: {len(baselines)} rows")

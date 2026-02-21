@@ -21,10 +21,12 @@ import numpy as np
 import joblib
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 
-# Paths
-BASELINES_PATH = "/dbfs/firstwave/artifacts/zone_baselines.parquet"
-STATS_PATH     = "/dbfs/firstwave/artifacts/zone_stats.parquet"
-MODEL_PATH     = "/dbfs/firstwave/artifacts/demand_model.pkl"
+# Serverless: use dbfs:/ for Spark operations, /tmp/ for local Python I/O
+DBFS_ARTIFACTS = "dbfs:/firstwave/artifacts"
+TMP_ARTIFACTS  = "/tmp/firstwave/artifacts"
+
+import os
+os.makedirs(TMP_ARTIFACTS, exist_ok=True)
 
 # COMMAND ----------
 
@@ -64,12 +66,13 @@ print("Loading incidents_aggregated from Delta...")
 agg_pd = spark.table("firstwave.incidents_aggregated").toPandas()
 print(f"  Loaded {len(agg_pd):,} rows")
 
+# On Serverless, read parquets via Spark (not pd.read_parquet on /dbfs/ path)
 print("\nLoading zone_baselines.parquet...")
-baselines = pd.read_parquet(BASELINES_PATH)
+baselines = spark.read.parquet(f"{DBFS_ARTIFACTS}/zone_baselines.parquet").toPandas()
 print(f"  {len(baselines)} rows, columns: {list(baselines.columns)}")
 
 print("\nLoading zone_stats.parquet...")
-zone_stats = pd.read_parquet(STATS_PATH)
+zone_stats = spark.read.parquet(f"{DBFS_ARTIFACTS}/zone_stats.parquet").toPandas()
 print(f"  {len(zone_stats)} rows, columns: {list(zone_stats.columns)}")
 
 # COMMAND ----------
@@ -203,8 +206,10 @@ with mlflow.start_run(run_name="xgboost_v1_dispatch_zones") as run:
     # ── Log Model ─────────────────────────────────────────────────────────────
     mlflow.xgboost.log_model(model, "demand_model")
 
-    # ── Save PKL to DBFS ──────────────────────────────────────────────────────
-    joblib.dump(model, MODEL_PATH)
+    # ── Save PKL: write to /tmp/ then copy to DBFS (Serverless has no /dbfs/ mount)
+    _model_tmp = f"{TMP_ARTIFACTS}/demand_model.pkl"
+    joblib.dump(model, _model_tmp)
+    dbutils.fs.cp(f"file:{_model_tmp}", f"{DBFS_ARTIFACTS}/demand_model.pkl")
 
     # ── Print Results ─────────────────────────────────────────────────────────
     print(f"\n{'='*55}")
@@ -222,7 +227,7 @@ with mlflow.start_run(run_name="xgboost_v1_dispatch_zones") as run:
         print(f"    {row['feature']}: {row['importance']:.4f}")
     print()
     print(f"  MLflow run ID: {run.info.run_id}")
-    print(f"  Model saved:   {MODEL_PATH}")
+    print(f"  Model saved:   {DBFS_ARTIFACTS}/demand_model.pkl")
     print(f"{'='*55}")
 
     if rmse > 6.0:
