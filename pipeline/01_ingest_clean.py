@@ -57,7 +57,7 @@ conn.execute(f"""
 COPY (
     SELECT
         -- parse datetime
-        strptime(INCIDENT_DATETIME, '%m/%d/%Y %I:%M:%S %p') AS incident_dt,
+        INCIDENT_DATETIME AS incident_dt,
 
         -- source columns kept for downstream use
         CAD_INCIDENT_ID,
@@ -70,26 +70,26 @@ COPY (
         HELD_INDICATOR,
 
         -- time features
-        EXTRACT(year  FROM strptime(INCIDENT_DATETIME, '%m/%d/%Y %I:%M:%S %p'))::INTEGER AS year,
-        EXTRACT(month FROM strptime(INCIDENT_DATETIME, '%m/%d/%Y %I:%M:%S %p'))::INTEGER AS month,
-        (EXTRACT(dow  FROM strptime(INCIDENT_DATETIME, '%m/%d/%Y %I:%M:%S %p'))::INTEGER + 6) % 7 AS dayofweek,
-        EXTRACT(hour  FROM strptime(INCIDENT_DATETIME, '%m/%d/%Y %I:%M:%S %p'))::INTEGER AS hour,
-        date_trunc('hour', strptime(INCIDENT_DATETIME, '%m/%d/%Y %I:%M:%S %p'))          AS date_hour,
-        CAST(strptime(INCIDENT_DATETIME, '%m/%d/%Y %I:%M:%S %p') AS DATE)                AS incident_date,
+        EXTRACT(year  FROM INCIDENT_DATETIME)::INTEGER AS year,
+        EXTRACT(month FROM INCIDENT_DATETIME)::INTEGER AS month,
+        (EXTRACT(dow  FROM INCIDENT_DATETIME)::INTEGER + 6) % 7 AS dayofweek,
+        EXTRACT(hour  FROM INCIDENT_DATETIME)::INTEGER AS hour,
+        date_trunc('hour', INCIDENT_DATETIME)          AS date_hour,
+        CAST(INCIDENT_DATETIME AS DATE)                AS incident_date,
 
         -- derived flags
-        CASE WHEN (EXTRACT(dow FROM strptime(INCIDENT_DATETIME, '%m/%d/%Y %I:%M:%S %p'))::INTEGER + 6) % 7 IN (5,6)
+        CASE WHEN (EXTRACT(dow FROM INCIDENT_DATETIME)::INTEGER + 6) % 7 IN (5,6)
              THEN 1 ELSE 0 END AS is_weekend,
         CASE WHEN FINAL_SEVERITY_LEVEL_CODE::INTEGER IN (1,2) THEN 1 ELSE 0 END AS is_high_acuity,
         CASE WHEN HELD_INDICATOR = 'Y' THEN 1 ELSE 0 END AS is_held,
-        CASE WHEN EXTRACT(year FROM strptime(INCIDENT_DATETIME, '%m/%d/%Y %I:%M:%S %p')) = 2020
+        CASE WHEN EXTRACT(year FROM INCIDENT_DATETIME) = 2020
              THEN 1 ELSE 0 END AS is_covid_year,
 
         -- train/test/exclude split
         CASE
-            WHEN EXTRACT(year FROM strptime(INCIDENT_DATETIME, '%m/%d/%Y %I:%M:%S %p')) = 2023 THEN 'test'
-            WHEN EXTRACT(year FROM strptime(INCIDENT_DATETIME, '%m/%d/%Y %I:%M:%S %p')) = 2020 THEN 'exclude'
-            WHEN EXTRACT(year FROM strptime(INCIDENT_DATETIME, '%m/%d/%Y %I:%M:%S %p'))
+            WHEN EXTRACT(year FROM INCIDENT_DATETIME) = 2023 THEN 'test'
+            WHEN EXTRACT(year FROM INCIDENT_DATETIME) = 2020 THEN 'exclude'
+            WHEN EXTRACT(year FROM INCIDENT_DATETIME)
                  BETWEEN 2019 AND 2022                                                          THEN 'train'
             ELSE 'exclude'
         END AS split
@@ -119,7 +119,7 @@ COPY (
             OR (BOROUGH LIKE '%STATEN%'        AND INCIDENT_DISPATCH_AREA LIKE 'S%')
         )
         -- datetime must parse successfully
-        AND strptime(INCIDENT_DATETIME, '%m/%d/%Y %I:%M:%S %p') IS NOT NULL
+        AND INCIDENT_DATETIME IS NOT NULL
 
 ) TO '{OUT_PARQUET}' (FORMAT PARQUET, COMPRESSION SNAPPY)
 """)
