@@ -66,3 +66,5 @@ export const WEATHER_PRESETS = {
 };
 
 export const DOW_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+export const STAGING_ZONE_COUNT = 5;

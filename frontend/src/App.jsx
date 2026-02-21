@@ -105,6 +105,7 @@ export default function App() {
             layerVisibility={layerVisibility}
             selectedZone={selectedZone}
             onZoneClick={handleZoneClick}
+            ambulanceCount={controls.ambulances}
           />
           {selectedZone && zoneHistoryData && (
             <ZoneDetailPanel
