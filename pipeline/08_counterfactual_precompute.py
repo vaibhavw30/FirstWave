@@ -87,6 +87,9 @@ FEATURE_COLS = [
     "is_weekend","temperature_2m","precipitation","windspeed_10m",
     "is_severe_weather","svi_score","zone_baseline_avg",
     "high_acuity_ratio","held_ratio",
+    # New features (must match Script 05 order exactly)
+    "is_holiday","is_major_event","is_school_day",
+    "is_heat_emergency","is_extreme_heat","subway_disruption_idx",
 ]
 VALID_ZONES = list(ZONE_CENTROIDS.keys())
 
@@ -190,6 +193,13 @@ def predict_counts(hour: int, dow: int, month: int = 10) -> dict:
             "zone_baseline_avg": baseline_avg,
             "high_acuity_ratio": har,
             "held_ratio": hdr,
+            # New features (defaults for counterfactual: normal weekday conditions)
+            "is_holiday": 0,
+            "is_major_event": 0,
+            "is_school_day": 1,
+            "is_heat_emergency": int(15.0 >= 35.0),   # 0 for default temp
+            "is_extreme_heat": int(15.0 >= 35.0),      # 0 for default temp
+            "subway_disruption_idx": 0.5,
         })
     df = pd.DataFrame(rows)
     preds = np.clip(model.predict(df[FEATURE_COLS]), 0, None)
