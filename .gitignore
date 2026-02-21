@@ -5,8 +5,8 @@
 backend/.env
 frontend/.env
 
-# Databricks CLI config
-~/.databrickscfg
+# Pipeline intermediate data (large parquets ~500MB — never commit)
+pipeline/data/
 
 # Large model artifacts (committed manually after training)
 # backend/artifacts/*.pkl  ← uncomment if pkl files are too large for git
