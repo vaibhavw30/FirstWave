@@ -1,0 +1,272 @@
+[
+  {
+    "station_id": "EMS_M01",
+    "name": "EMS Station 1",
+    "borough": "MANHATTAN",
+    "address": "100 Beekman St, New York, NY 10038",
+    "lat": 40.7096,
+    "lon": -74.0043,
+    "dispatch_zone": "M1"
+  },
+  {
+    "station_id": "EMS_M02",
+    "name": "EMS Station 2",
+    "borough": "MANHATTAN",
+    "address": "4 Gouverneur Slip, New York, NY 10002",
+    "lat": 40.7104,
+    "lon": -73.9805,
+    "dispatch_zone": "M1"
+  },
+  {
+    "station_id": "EMS_M04",
+    "name": "EMS Station 4",
+    "borough": "MANHATTAN",
+    "address": "429 East 26th St, New York, NY 10010",
+    "lat": 40.7382,
+    "lon": -73.9763,
+    "dispatch_zone": "M4"
+  },
+  {
+    "station_id": "EMS_M07",
+    "name": "EMS Station 7",
+    "borough": "MANHATTAN",
+    "address": "340 East 125th St, New York, NY 10035",
+    "lat": 40.8042,
+    "lon": -73.9353,
+    "dispatch_zone": "M7"
+  },
+  {
+    "station_id": "EMS_M17",
+    "name": "EMS Station 17",
+    "borough": "MANHATTAN",
+    "address": "1718 2nd Ave, New York, NY 10128",
+    "lat": 40.7831,
+    "lon": -73.9490,
+    "dispatch_zone": "M6"
+  },
+  {
+    "station_id": "EMS_M18",
+    "name": "EMS Station 18",
+    "borough": "MANHATTAN",
+    "address": "84 Thayer St, New York, NY 10040",
+    "lat": 40.8607,
+    "lon": -73.9290,
+    "dispatch_zone": "M9"
+  },
+  {
+    "station_id": "EMS_M26",
+    "name": "EMS Station 26",
+    "borough": "MANHATTAN",
+    "address": "159 Lenox Ave, New York, NY 10026",
+    "lat": 40.8042,
+    "lon": -73.9498,
+    "dispatch_zone": "M7"
+  },
+  {
+    "station_id": "EMS_M26B",
+    "name": "EMS Station 26B",
+    "borough": "MANHATTAN",
+    "address": "35 W 132nd St, New York, NY 10037",
+    "lat": 40.8091,
+    "lon": -73.9456,
+    "dispatch_zone": "M7"
+  },
+  {
+    "station_id": "EMS_B35",
+    "name": "EMS Station 35",
+    "borough": "BRONX",
+    "address": "1855 Westchester Ave, Bronx, NY 10472",
+    "lat": 40.8254,
+    "lon": -73.8714,
+    "dispatch_zone": "B3"
+  },
+  {
+    "station_id": "EMS_B41",
+    "name": "EMS Station 41",
+    "borough": "BRONX",
+    "address": "5308 Broadway, Bronx, NY 10463",
+    "lat": 40.8818,
+    "lon": -73.9103,
+    "dispatch_zone": "B5"
+  },
+  {
+    "station_id": "EMS_B43",
+    "name": "EMS Station 43",
+    "borough": "BRONX",
+    "address": "1901 Mapes Ave, Bronx, NY 10460",
+    "lat": 40.8505,
+    "lon": -73.8960,
+    "dispatch_zone": "B2"
+  },
+  {
+    "station_id": "EMS_B47",
+    "name": "EMS Station 47",
+    "borough": "BRONX",
+    "address": "801 Intervale Ave, Bronx, NY 10459",
+    "lat": 40.8241,
+    "lon": -73.8980,
+    "dispatch_zone": "B1"
+  },
+  {
+    "station_id": "EMS_B49",
+    "name": "EMS Station 49",
+    "borough": "BRONX",
+    "address": "4424 White Plains Rd, Bronx, NY 10470",
+    "lat": 40.8897,
+    "lon": -73.8608,
+    "dispatch_zone": "B4"
+  },
+  {
+    "station_id": "EMS_B50",
+    "name": "EMS Station 50",
+    "borough": "BRONX",
+    "address": "344 E 149th St, Bronx, NY 10455",
+    "lat": 40.8163,
+    "lon": -73.9154,
+    "dispatch_zone": "B1"
+  },
+  {
+    "station_id": "EMS_K53",
+    "name": "EMS Station 53",
+    "borough": "BROOKLYN",
+    "address": "456 Vanderbilt Ave, Brooklyn, NY 11238",
+    "lat": 40.6798,
+    "lon": -73.9637,
+    "dispatch_zone": "K7"
+  },
+  {
+    "station_id": "EMS_K57",
+    "name": "EMS Station 57",
+    "borough": "BROOKLYN",
+    "address": "85 Snyder Ave, Brooklyn, NY 11226",
+    "lat": 40.6441,
+    "lon": -73.9553,
+    "dispatch_zone": "K2"
+  },
+  {
+    "station_id": "EMS_K58",
+    "name": "EMS Station 58",
+    "borough": "BROOKLYN",
+    "address": "1369 Atlantic Ave, Brooklyn, NY 11216",
+    "lat": 40.6831,
+    "lon": -73.9369,
+    "dispatch_zone": "K5"
+  },
+  {
+    "station_id": "EMS_K63",
+    "name": "EMS Station 63",
+    "borough": "BROOKLYN",
+    "address": "770 E 98th St, Brooklyn, NY 11236",
+    "lat": 40.6493,
+    "lon": -73.9064,
+    "dispatch_zone": "K4"
+  },
+  {
+    "station_id": "EMS_K70",
+    "name": "EMS Station 70",
+    "borough": "BROOKLYN",
+    "address": "1399 Flatbush Ave, Brooklyn, NY 11210",
+    "lat": 40.6281,
+    "lon": -73.9477,
+    "dispatch_zone": "K6"
+  },
+  {
+    "station_id": "EMS_K75",
+    "name": "EMS Station 75",
+    "borough": "BROOKLYN",
+    "address": "406 Hendrix St, Brooklyn, NY 11207",
+    "lat": 40.6638,
+    "lon": -73.8894,
+    "dispatch_zone": "K4"
+  },
+  {
+    "station_id": "EMS_Q44",
+    "name": "EMS Station 44",
+    "borough": "QUEENS",
+    "address": "46-01 Queensboro Bridge Plaza, Queens, NY 11101",
+    "lat": 40.7449,
+    "lon": -73.9358,
+    "dispatch_zone": "Q6"
+  },
+  {
+    "station_id": "EMS_Q45",
+    "name": "EMS Station 45",
+    "borough": "QUEENS",
+    "address": "87-91 Francis Lewis Blvd, Queens, NY 11427",
+    "lat": 40.7266,
+    "lon": -73.7466,
+    "dispatch_zone": "Q5"
+  },
+  {
+    "station_id": "EMS_Q46",
+    "name": "EMS Station 46",
+    "borough": "QUEENS",
+    "address": "148-01 Hillside Ave, Queens, NY 11435",
+    "lat": 40.7028,
+    "lon": -73.7967,
+    "dispatch_zone": "Q1"
+  },
+  {
+    "station_id": "EMS_Q49",
+    "name": "EMS Station 49Q",
+    "borough": "QUEENS",
+    "address": "182-24 Horace Harding Expy, Queens, NY 11365",
+    "lat": 40.7382,
+    "lon": -73.7884,
+    "dispatch_zone": "Q2"
+  },
+  {
+    "station_id": "EMS_Q52",
+    "name": "EMS Station 52",
+    "borough": "QUEENS",
+    "address": "68-00 136th St, Queens, NY 11367",
+    "lat": 40.7263,
+    "lon": -73.8275,
+    "dispatch_zone": "Q3"
+  },
+  {
+    "station_id": "EMS_Q54",
+    "name": "EMS Station 54",
+    "borough": "QUEENS",
+    "address": "58-02 101st St, Queens, NY 11368",
+    "lat": 40.7508,
+    "lon": -73.8665,
+    "dispatch_zone": "Q4"
+  },
+  {
+    "station_id": "EMS_Q55",
+    "name": "EMS Station 55",
+    "borough": "QUEENS",
+    "address": "4238 Main St, Flushing, Queens, NY 11355",
+    "lat": 40.7394,
+    "lon": -73.8295,
+    "dispatch_zone": "Q2"
+  },
+  {
+    "station_id": "EMS_S61",
+    "name": "EMS Station 61",
+    "borough": "RICHMOND / STATEN ISLAND",
+    "address": "45 Bay St, Staten Island, NY 10301",
+    "lat": 40.6426,
+    "lon": -74.0762,
+    "dispatch_zone": "S1"
+  },
+  {
+    "station_id": "EMS_S62",
+    "name": "EMS Station 62",
+    "borough": "RICHMOND / STATEN ISLAND",
+    "address": "1725 Richmond Ave, Staten Island, NY 10314",
+    "lat": 40.5918,
+    "lon": -74.1618,
+    "dispatch_zone": "S2"
+  },
+  {
+    "station_id": "EMS_S67",
+    "name": "EMS Station 67",
+    "borough": "RICHMOND / STATEN ISLAND",
+    "address": "2475 Richmond Ave, Staten Island, NY 10314",
+    "lat": 40.5717,
+    "lon": -74.1742,
+    "dispatch_zone": "S2"
+  }
+]
