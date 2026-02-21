@@ -13,7 +13,7 @@ export default function AmbulanceCount({ value, onChange }) {
             cursor: value <= 1 ? 'not-allowed' : 'pointer',
           }}
         >&minus;</button>
-        <span style={{ fontSize: 20, fontWeight: 700, color: '#42A5F5', minWidth: 30, textAlign: 'center' }}>{value}</span>
+        <span style={{ fontSize: 24, fontWeight: 800, color: '#42A5F5', minWidth: 30, textAlign: 'center', fontFamily: "'DM Mono', monospace" }}>{value}</span>
         <button
           onClick={() => onChange(Math.min(10, value + 1))}
           disabled={value >= 10}

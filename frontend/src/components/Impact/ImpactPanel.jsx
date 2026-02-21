@@ -6,7 +6,7 @@ export default function ImpactPanel({ data, isLoading }) {
   if (isLoading) {
     return (
       <div style={{
-        height: 220, background: '#0d0d1a', borderTop: '1px solid #2a2a4a',
+        height: 280, background: '#0d0d1a', borderTop: '1px solid #2a2a4a',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         color: '#555', flexShrink: 0,
       }}>
@@ -17,7 +17,7 @@ export default function ImpactPanel({ data, isLoading }) {
 
   return (
     <div style={{
-      height: 220,
+      height: 280,
       background: '#0d0d1a',
       borderTop: '1px solid #2a2a4a',
       display: 'flex',

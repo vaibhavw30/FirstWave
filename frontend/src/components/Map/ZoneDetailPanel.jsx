@@ -59,12 +59,12 @@ export default function ZoneDetailPanel({ data, onClose }) {
       <div style={{ marginBottom: 12 }}>
         <div style={{ fontSize: 12, color: '#aaa', marginBottom: 2 }}>Social Vulnerability</div>
         <span style={{ color: sviColor, fontWeight: 600 }}>{sviLabel}</span>
-        <span style={{ color: '#888', marginLeft: 8 }}>({data.svi_score?.toFixed(2)})</span>
+        <span style={{ color: '#888', marginLeft: 8, fontFamily: "'DM Mono', monospace" }}>({data.svi_score?.toFixed(2)})</span>
       </div>
 
       <div style={{ marginBottom: 12 }}>
         <div style={{ fontSize: 12, color: '#aaa', marginBottom: 2 }}>Avg Response Time</div>
-        <div style={{ fontSize: 16, fontWeight: 600 }}>{formatSeconds(data.avg_response_seconds)}</div>
+        <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "'DM Mono', monospace" }}>{formatSeconds(data.avg_response_seconds)}</div>
       </div>
 
       <div style={{ marginBottom: 12 }}>
@@ -74,8 +74,8 @@ export default function ZoneDetailPanel({ data, onClose }) {
           <div style={{ width: `${travelPct}%`, background: '#42A5F5' }} title={`Travel: ${formatSeconds(data.avg_travel_seconds)}`} />
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#888', marginTop: 2 }}>
-          <span>Dispatch {formatSeconds(data.avg_dispatch_seconds)}</span>
-          <span>Travel {formatSeconds(data.avg_travel_seconds)}</span>
+          <span>Dispatch <span style={{ fontFamily: "'DM Mono', monospace" }}>{formatSeconds(data.avg_dispatch_seconds)}</span></span>
+          <span>Travel <span style={{ fontFamily: "'DM Mono', monospace" }}>{formatSeconds(data.avg_travel_seconds)}</span></span>
         </div>
       </div>
 

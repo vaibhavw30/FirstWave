@@ -25,7 +25,7 @@ export default function ResponseHistogram({ data }) {
   ], [data]);
 
   const layout = useMemo(() => ({
-    height: 160,
+    height: 190,
     margin: { l: 35, r: 10, t: 5, b: 30 },
     paper_bgcolor: 'transparent',
     plot_bgcolor: 'transparent',
@@ -33,12 +33,12 @@ export default function ResponseHistogram({ data }) {
     xaxis: {
       title: { text: 'Minutes', font: { size: 10, color: '#888' } },
       tickfont: { color: '#888', size: 9 },
-      gridcolor: '#222',
-      range: [0, 25],
+      gridcolor: '#1a2a3a',
+      range: [0, 20],
     },
     yaxis: {
       tickfont: { color: '#888', size: 9 },
-      gridcolor: '#222',
+      gridcolor: '#1a2a3a',
     },
     legend: { font: { color: '#aaa', size: 9 }, x: 0.6, y: 0.95, bgcolor: 'transparent' },
     shapes: [{
