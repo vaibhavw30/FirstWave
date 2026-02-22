@@ -6,23 +6,15 @@ import { formatSeconds } from '../../utils/formatters';
 const Plot = createPlotlyComponent(Plotly);
 
 export default function ZoneDetailPanel({ data, onClose }) {
-  if (!data) return null;
-
-  const sviLabel = data.svi_score >= 0.75 ? 'Very High' : data.svi_score >= 0.5 ? 'High' : data.svi_score >= 0.25 ? 'Moderate' : 'Low';
-  const sviColor = data.svi_score >= 0.75 ? '#EF5350' : data.svi_score >= 0.5 ? '#FB8C00' : data.svi_score >= 0.25 ? '#FDD835' : '#00897B';
-
-  const dispatchPct = data.avg_response_seconds > 0 ? (data.avg_dispatch_seconds / data.avg_response_seconds) * 100 : 50;
-  const travelPct = 100 - dispatchPct;
-
   const sparkData = useMemo(() => [{
     x: Array.from({ length: 24 }, (_, i) => i),
-    y: data.hourly_avg || [],
+    y: data?.hourly_avg || [],
     type: 'scatter',
     mode: 'lines',
     fill: 'tozeroy',
     fillcolor: 'rgba(66,165,245,0.15)',
     line: { color: '#42A5F5', width: 2 },
-  }], [data.hourly_avg]);
+  }], [data?.hourly_avg]);
 
   const sparkLayout = useMemo(() => ({
     height: 120,
@@ -32,6 +24,14 @@ export default function ZoneDetailPanel({ data, onClose }) {
     xaxis: { tickfont: { color: '#888', size: 9 }, gridcolor: '#222', dtick: 6 },
     yaxis: { tickfont: { color: '#888', size: 9 }, gridcolor: '#222' },
   }), []);
+
+  if (!data) return null;
+
+  const sviLabel = data.svi_score >= 0.75 ? 'Very High' : data.svi_score >= 0.5 ? 'High' : data.svi_score >= 0.25 ? 'Moderate' : 'Low';
+  const sviColor = data.svi_score >= 0.75 ? '#EF5350' : data.svi_score >= 0.5 ? '#FB8C00' : data.svi_score >= 0.25 ? '#FDD835' : '#00897B';
+
+  const dispatchPct = data.avg_response_seconds > 0 ? (data.avg_dispatch_seconds / data.avg_response_seconds) * 100 : 50;
+  const travelPct = 100 - dispatchPct;
 
   return (
     <div style={{

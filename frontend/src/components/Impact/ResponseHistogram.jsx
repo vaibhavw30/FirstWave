@@ -5,18 +5,16 @@ import Plotly from 'plotly.js-basic-dist-min';
 const Plot = createPlotlyComponent(Plotly);
 
 export default function ResponseHistogram({ data }) {
-  if (!data) return null;
-
   const plotData = useMemo(() => [
     {
-      x: (data.histogram_baseline_seconds || []).map(s => s / 60),
+      x: (data?.histogram_baseline_seconds || []).map(s => s / 60),
       type: 'histogram',
       name: 'Static',
       marker: { color: 'rgba(239,83,80,0.65)' },
       nbinsx: 15,
     },
     {
-      x: (data.histogram_staged_seconds || []).map(s => s / 60),
+      x: (data?.histogram_staged_seconds || []).map(s => s / 60),
       type: 'histogram',
       name: 'FirstWave',
       marker: { color: 'rgba(66,165,245,0.65)' },
@@ -54,6 +52,8 @@ export default function ResponseHistogram({ data }) {
       font: { color: '#FDD835', size: 9 },
     }],
   }), []);
+
+  if (!data) return null;
 
   return (
     <div style={{ flex: '1 1 0', padding: '0 8px' }}>
