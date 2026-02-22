@@ -174,7 +174,7 @@ async def startup_event():
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 
-from routers import heatmap, staging, counterfactual, historical, breakdown, stations  # noqa: E402
+from routers import heatmap, staging, counterfactual, historical, breakdown, stations, ai_panel  # noqa: E402
 
 app.include_router(heatmap.router, prefix="/api")
 app.include_router(staging.router, prefix="/api")
@@ -182,6 +182,7 @@ app.include_router(counterfactual.router, prefix="/api")
 app.include_router(historical.router, prefix="/api")
 app.include_router(breakdown.router, prefix="/api")
 app.include_router(stations.router, prefix="/api")
+app.include_router(ai_panel.router, prefix="/api")
 
 
 # ── Health + Reload ───────────────────────────────────────────────────────────

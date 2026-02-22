@@ -6,6 +6,7 @@ import DemandHeatmap from './DemandHeatmap';
 import ZoneChoropleth from './ZoneChoropleth';
 import StagingPins from './StagingPins';
 import ZoneTooltip from './ZoneTooltip';
+import StationLayer, { StationTooltip } from './StationLayer';
 
 const INITIAL_VIEW = {
   longitude: -73.97,
@@ -17,21 +18,33 @@ const INITIAL_VIEW = {
 
 export default function MapContainer({ heatmapData, stagingData, layerVisibility, selectedZone, onZoneClick, ambulanceCount }) {
   const [hoverInfo, setHoverInfo] = useState(null);
+  const [stationHover, setStationHover] = useState(null);
+
+  const interactiveLayerIds = [
+    ...(layerVisibility.heatmap ? ['zone-fill', 'zip-fill'] : []),
+    ...(layerVisibility.stations ? ['ems-stations-circle'] : []),
+  ];
 
   const onMouseMove = useCallback((e) => {
     const feature = e.features && e.features[0];
-    if (feature) {
-      setHoverInfo({
-        x: e.point.x,
-        y: e.point.y,
-        properties: feature.properties,
-      });
-    } else {
+    if (!feature) {
       setHoverInfo(null);
+      setStationHover(null);
+      return;
+    }
+    if (feature.layer?.id === 'ems-stations-circle') {
+      setStationHover({ x: e.point.x, y: e.point.y, properties: feature.properties });
+      setHoverInfo(null);
+    } else {
+      setHoverInfo({ x: e.point.x, y: e.point.y, properties: feature.properties });
+      setStationHover(null);
     }
   }, []);
 
-  const onMouseLeave = useCallback(() => setHoverInfo(null), []);
+  const onMouseLeave = useCallback(() => {
+    setHoverInfo(null);
+    setStationHover(null);
+  }, []);
 
   const onClick = useCallback((e) => {
     const feature = e.features && e.features[0];
@@ -46,7 +59,7 @@ export default function MapContainer({ heatmapData, stagingData, layerVisibility
         initialViewState={INITIAL_VIEW}
         mapboxAccessToken={MAPBOX_TOKEN}
         mapStyle="mapbox://styles/mapbox/dark-v11"
-        interactiveLayerIds={layerVisibility.heatmap ? ['zone-fill', 'zip-fill'] : []}
+        interactiveLayerIds={interactiveLayerIds}
         onMouseMove={onMouseMove}
         onMouseLeave={onMouseLeave}
         onClick={onClick}
@@ -60,8 +73,10 @@ export default function MapContainer({ heatmapData, stagingData, layerVisibility
           showCoverage={layerVisibility.coverage}
           ambulanceCount={ambulanceCount}
         />
+        <StationLayer visible={layerVisibility.stations} />
       </Map>
       {hoverInfo && <ZoneTooltip info={hoverInfo} />}
+      {stationHover && <StationTooltip info={stationHover} />}
     </div>
   );
 }
