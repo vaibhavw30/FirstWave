@@ -88,4 +88,29 @@ describe('ZoneDetailPanel', () => {
     expect(screen.getByText('Hourly Demand Pattern')).toBeInTheDocument();
     expect(screen.getByTestId('plotly-chart')).toBeInTheDocument();
   });
+
+  it('returns null when data is undefined', () => {
+    const { container } = render(<ZoneDetailPanel data={undefined} onClose={() => {}} />);
+    expect(container.innerHTML).toBe('');
+  });
+
+  it('re-renders without crash when data transitions null → valid', () => {
+    const { rerender, container } = render(<ZoneDetailPanel data={null} onClose={() => {}} />);
+    expect(container.innerHTML).toBe('');
+
+    rerender(<ZoneDetailPanel data={mockZoneData} onClose={() => {}} />);
+    expect(screen.getByText(/B2/)).toBeInTheDocument();
+    expect(screen.getByTestId('plotly-chart')).toBeInTheDocument();
+  });
+
+  it('re-renders without crash when data transitions valid → null → valid', () => {
+    const { rerender, container } = render(<ZoneDetailPanel data={mockZoneData} onClose={() => {}} />);
+    expect(screen.getByTestId('plotly-chart')).toBeInTheDocument();
+
+    rerender(<ZoneDetailPanel data={null} onClose={() => {}} />);
+    expect(container.innerHTML).toBe('');
+
+    rerender(<ZoneDetailPanel data={mockZoneData} onClose={() => {}} />);
+    expect(screen.getByText(/B2/)).toBeInTheDocument();
+  });
 });
