@@ -1,7 +1,7 @@
 import CoverageBars from './CoverageBars';
 import ResponseHistogram from './ResponseHistogram';
 
-export default function ImpactPanel({ data, isLoading }) {
+export default function ImpactPanel({ data, isLoading, selectedBorough }) {
   if (isLoading) {
     return (
       <div style={{
@@ -24,8 +24,8 @@ export default function ImpactPanel({ data, isLoading }) {
       padding: 12,
       flexShrink: 0,
     }}>
-      <CoverageBars data={data} />
-      <ResponseHistogram data={data} />
+      <CoverageBars data={data} selectedBorough={selectedBorough} />
+      <ResponseHistogram data={data} selectedBorough={selectedBorough} />
     </div>
   );
 }

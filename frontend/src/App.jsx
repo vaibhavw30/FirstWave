@@ -115,7 +115,7 @@ export default function App() {
           )}
         </div>
       </div>
-      <ImpactPanel data={counterfactualData} isLoading={cfLoading} />
+      <ImpactPanel data={counterfactualData} isLoading={cfLoading} selectedBorough={zoneHistoryData?.borough || null} />
     </>
   );
 }
