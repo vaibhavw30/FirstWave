@@ -15,7 +15,7 @@ const INITIAL_VIEW = {
   bearing: 0,
 };
 
-export default function MapContainer({ heatmapData, stagingData, layerVisibility, selectedZone, onZoneClick, ambulanceCount }) {
+export default function MapContainer({ heatmapData, stagingData, layerVisibility, selectedZone, onZoneClick, ambulanceCount, counterfactualByZone }) {
   const [hoverInfo, setHoverInfo] = useState(null);
 
   const onMouseMove = useCallback((e) => {
@@ -59,6 +59,7 @@ export default function MapContainer({ heatmapData, stagingData, layerVisibility
           showPins={layerVisibility.staging}
           showCoverage={layerVisibility.coverage}
           ambulanceCount={ambulanceCount}
+          counterfactualByZone={counterfactualByZone}
         />
       </Map>
       {hoverInfo && <ZoneTooltip info={hoverInfo} />}

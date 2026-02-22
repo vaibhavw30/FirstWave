@@ -81,10 +81,7 @@ export default function App() {
 
   const { data: heatmapData } = useHeatmap(params);
   const { data: stagingData } = useStaging(params);
-  const { data: counterfactualData, isLoading: cfLoading } = useCounterfactual({
-    hour: queryControls.hour,
-    dow: queryControls.dow,
-  });
+  const { data: counterfactualData, isLoading: cfLoading } = useCounterfactual(params);
   const { data: zoneHistoryData } = useZoneHistory(selectedZone);
 
   return (
@@ -106,11 +103,13 @@ export default function App() {
             selectedZone={selectedZone}
             onZoneClick={handleZoneClick}
             ambulanceCount={controls.ambulances}
+            counterfactualByZone={counterfactualData?.by_zone}
           />
           {selectedZone && zoneHistoryData && (
             <ZoneDetailPanel
               data={zoneHistoryData}
               onClose={() => setSelectedZone(null)}
+              counterfactualData={counterfactualData}
             />
           )}
         </div>
