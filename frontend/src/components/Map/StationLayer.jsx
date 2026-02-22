@@ -5,9 +5,9 @@ const circleLayer = {
   id: 'ems-stations-circle',
   type: 'circle',
   paint: {
-    'circle-radius': 7,
-    'circle-color': '#78909C',
-    'circle-stroke-width': 1.5,
+    'circle-radius': 8,
+    'circle-color': '#90A4AE',
+    'circle-stroke-width': 2,
     'circle-stroke-color': '#ECEFF1',
   },
 };

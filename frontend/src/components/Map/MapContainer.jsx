@@ -7,6 +7,7 @@ import ZoneChoropleth from './ZoneChoropleth';
 import StagingPins from './StagingPins';
 import ZoneTooltip from './ZoneTooltip';
 import StationLayer, { StationTooltip } from './StationLayer';
+import EquityLayer from './EquityLayer';
 
 const INITIAL_VIEW = {
   longitude: -73.97,
@@ -16,7 +17,7 @@ const INITIAL_VIEW = {
   bearing: 0,
 };
 
-export default function MapContainer({ heatmapData, stagingData, layerVisibility, selectedZone, onZoneClick, ambulanceCount, counterfactualByZone }) {
+export default function MapContainer({ heatmapData, stagingData, layerVisibility, selectedZone, onZoneClick, ambulanceCount, counterfactualByZone, overlays }) {
   const [hoverInfo, setHoverInfo] = useState(null);
   const [stationHover, setStationHover] = useState(null);
 
@@ -55,29 +56,30 @@ export default function MapContainer({ heatmapData, stagingData, layerVisibility
 
   return (
     <div style={{ flex: 1, position: 'relative' }}>
-      <Map
-        initialViewState={INITIAL_VIEW}
-        mapboxAccessToken={MAPBOX_TOKEN}
-        mapStyle="mapbox://styles/mapbox/dark-v11"
-        interactiveLayerIds={interactiveLayerIds}
-        onMouseMove={onMouseMove}
-        onMouseLeave={onMouseLeave}
-        onClick={onClick}
-        style={{ width: '100%', height: '100%' }}
-      >
-        <DemandHeatmap heatmapData={heatmapData} visible={layerVisibility.heatmap} />
-        {layerVisibility.heatmap && <ZoneChoropleth data={heatmapData} />}
-        <StagingPins
-          data={stagingData}
-          showPins={layerVisibility.staging}
-          showCoverage={layerVisibility.coverage}
-          ambulanceCount={ambulanceCount}
-          counterfactualByZone={counterfactualByZone}
-        />
-        <StationLayer visible={layerVisibility.stations} />
-      </Map>
-      {hoverInfo && <ZoneTooltip info={hoverInfo} />}
-      {stationHover && <StationTooltip info={stationHover} />}
+        <Map
+          initialViewState={INITIAL_VIEW}
+          mapboxAccessToken={MAPBOX_TOKEN}
+          mapStyle="mapbox://styles/mapbox/dark-v11"
+          interactiveLayerIds={interactiveLayerIds}
+          onMouseMove={onMouseMove}
+          onMouseLeave={onMouseLeave}
+          onClick={onClick}
+          style={{ width: '100%', height: '100%' }}
+        >
+          <DemandHeatmap heatmapData={heatmapData} visible={layerVisibility.heatmap} />
+          {layerVisibility.heatmap && <ZoneChoropleth data={heatmapData} />}
+          <StagingPins
+            data={stagingData}
+            showPins={layerVisibility.staging}
+            showCoverage={layerVisibility.coverage}
+            ambulanceCount={ambulanceCount}
+            counterfactualByZone={counterfactualByZone}
+          />
+          <StationLayer visible={layerVisibility.stations} />
+          <EquityLayer visible={overlays.equity} />
+        </Map>
+        {hoverInfo && <ZoneTooltip info={hoverInfo} />}
+        {stationHover && <StationTooltip info={stationHover} />}
     </div>
   );
 }

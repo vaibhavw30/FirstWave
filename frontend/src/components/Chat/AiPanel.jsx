@@ -2,6 +2,14 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { API_BASE_URL } from '../../constants';
 
+const DispatchIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="8" cy="8" r="2.5" fill="#42A5F5" />
+    <circle cx="8" cy="8" r="5" stroke="#42A5F5" strokeOpacity="0.5" strokeWidth="1.2" fill="none" />
+    <circle cx="8" cy="8" r="7.5" stroke="#42A5F5" strokeOpacity="0.25" strokeWidth="1" fill="none" />
+  </svg>
+);
+
 const EXAMPLE_PROMPTS = [
   'Yankees game Friday night?',
   'Heavy storm Tuesday evening?',
@@ -123,23 +131,24 @@ export default function AiPanel({ heatmapData, counterfactualData, controls, onC
           position: 'fixed',
           top: 60,
           right: 16,
-          padding: '7px 14px',
+          padding: '8px 16px',
           borderRadius: 20,
           background: '#0D47A1',
           border: '1px solid #42A5F5',
           color: '#E3F2FD',
           fontSize: 12,
-          fontWeight: 700,
+          fontFamily: "'DM Mono', monospace",
+          fontWeight: 500,
+          letterSpacing: '0.05em',
           cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',
-          gap: 6,
+          gap: 8,
           zIndex: 1000,
-          boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
-          letterSpacing: 0.3,
+          boxShadow: '0 2px 12px rgba(66,165,245,0.25), 0 0 20px rgba(13,71,161,0.3)',
         }}
       >
-        🤖 AI Dispatcher
+        <DispatchIcon /> AI Dispatcher
         {isBriefingLoading && (
           <span style={{ color: '#FDD835', fontSize: 11 }}>↻</span>
         )}
@@ -173,8 +182,8 @@ export default function AiPanel({ heatmapData, counterfactualData, controls, onC
         borderBottom: '1px solid #1565C0',
         flexShrink: 0,
       }}>
-        <span style={{ fontWeight: 700, fontSize: 13, color: '#E3F2FD', letterSpacing: 0.3 }}>
-          🤖 AI Dispatcher
+        <span style={{ fontWeight: 500, fontSize: 13, fontFamily: "'DM Mono', monospace", color: '#E3F2FD', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <DispatchIcon /> AI Dispatcher
           {isBriefingLoading && <span style={{ color: '#FDD835', fontSize: 10, marginLeft: 6, fontWeight: 400 }}>↻ updating…</span>}
         </span>
         <button

@@ -60,9 +60,9 @@ export const DEMO_SCENARIOS = {
 };
 
 export const WEATHER_PRESETS = {
-  none: { temperature: 15, precipitation: 0, windspeed: 10, label: 'Clear' },
-  light: { temperature: 12, precipitation: 2, windspeed: 15, label: 'Light Rain' },
-  heavy: { temperature: 8, precipitation: 8, windspeed: 30, label: 'Heavy Storm' },
+  none:  { temperature: 22, precipitation: 0,  windspeed: 8,  label: 'Clear' },
+  light: { temperature: 10, precipitation: 4,  windspeed: 20, label: 'Light Rain' },
+  heavy: { temperature: 4,  precipitation: 12, windspeed: 40, label: 'Heavy Storm' },
 };
 
 export const DOW_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
