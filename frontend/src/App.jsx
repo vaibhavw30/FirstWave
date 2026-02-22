@@ -11,6 +11,7 @@ import { useCounterfactual } from './hooks/useCounterfactual';
 import { useZoneHistory } from './hooks/useZoneHistory';
 import { DEMO_SCENARIOS, WEATHER_PRESETS } from './constants';
 import AiPanel from './components/Chat/AiPanel';
+import { useMapOverlays } from './hooks/useMapOverlays';
 
 const DEFAULT_CONTROLS = {
   hour: 20,
@@ -44,6 +45,7 @@ export default function App() {
     stations: false,
   });
   const [isPlaying, setIsPlaying] = useState(false);
+  const { overlays, toggleOverlay } = useMapOverlays();
 
   const debouncedSetQuery = useMemo(
     () => debounce((c) => setQueryControls(c), 300),
@@ -141,6 +143,7 @@ export default function App() {
             onZoneClick={handleZoneClick}
             ambulanceCount={controls.ambulances}
             counterfactualByZone={counterfactualData?.by_zone}
+            overlays={overlays}
           />
           {selectedZone && zoneHistoryData && (
             <ZoneDetailPanel
@@ -157,7 +160,7 @@ export default function App() {
           />
         </div>
       </div>
-      <ImpactPanel data={counterfactualData} isLoading={cfLoading} selectedBorough={zoneHistoryData?.borough || null} />
+      <ImpactPanel data={counterfactualData} isLoading={cfLoading} selectedBorough={zoneHistoryData?.borough || null} overlays={overlays} toggleOverlay={toggleOverlay} />
     </>
   );
 }

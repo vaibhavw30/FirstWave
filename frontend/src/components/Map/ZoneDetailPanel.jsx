@@ -82,11 +82,12 @@ export default function ZoneDetailPanel({ data, onClose, counterfactualData }) {
       {(() => {
         const bd = counterfactualData?.by_borough?.[data.borough];
         if (!bd) return null;
+        const zoneCounterfactual = counterfactualData?.by_zone?.[data.zone];
         const saved = bd.median_saved_sec;
         const staticPct = bd.static;
         const stagedPct = bd.staged;
-        const beforeTime = data.avg_response_seconds;
-        const afterTime = Math.max(0, beforeTime - saved);
+        const beforeTime = zoneCounterfactual?.static_time ?? data.avg_response_seconds;
+        const afterTime = zoneCounterfactual ? (zoneCounterfactual.staged_time) : Math.max(0, beforeTime - saved);
         const afterColor = afterTime <= 480 ? '#4caf50' : afterTime <= 600 ? '#FB8C00' : '#EF5350';
         const stagedPctColor = stagedPct >= 80 ? '#4caf50' : stagedPct >= 60 ? '#FB8C00' : '#EF5350';
         return (
@@ -100,10 +101,10 @@ export default function ZoneDetailPanel({ data, onClose, counterfactualData }) {
               <span style={{ fontSize: 11, color: '#999' }}>After</span>
               <span style={{ fontWeight: 600, fontFamily: "'DM Mono', monospace", color: afterColor }}>{formatSeconds(afterTime)}</span>
             </div>
-            {saved > 0 && (
+            {(zoneCounterfactual?.seconds_saved ?? saved) > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
                 <span style={{ fontSize: 11, color: '#999' }}>Time saved</span>
-                <span style={{ fontWeight: 600, fontFamily: "'DM Mono', monospace", color: '#42a5f5' }}>{formatSeconds(saved)}</span>
+                <span style={{ fontWeight: 600, fontFamily: "'DM Mono', monospace", color: '#42a5f5' }}>{formatSeconds(zoneCounterfactual?.seconds_saved ?? saved)}</span>
               </div>
             )}
             <div style={{ borderTop: '1px solid #2a2a4a', paddingTop: 6, marginTop: 2 }}>

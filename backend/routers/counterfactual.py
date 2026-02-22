@@ -67,6 +67,14 @@ ZONE_CENTROIDS = {
 }
 
 
+def _weather_travel_factor(precipitation: float, windspeed: float) -> float:
+    """Compute a multiplier > 1.0 that slows travel based on weather conditions.
+    +1.2% per mm/hr precipitation, +0.2% per km/h wind above 15."""
+    precip_penalty = 0.012 * precipitation
+    wind_penalty = 0.002 * max(0, windspeed - 15)
+    return 1.0 + precip_penalty + wind_penalty
+
+
 def _haversine_km(lon1, lat1, lon2, lat2):
     R = 6371.0
     dlat = math.radians(lat2 - lat1)
@@ -137,18 +145,20 @@ def _compute_dynamic_counterfactual(
         # Static response time: split into dispatch + travel components
         dispatch_sec = AVG_DISPATCH_DEFAULTS.get(zone, 205)
         travel_sec = AVG_TRAVEL_DEFAULTS.get(zone, 335)
-        static_time = AVG_RESPONSE_DEFAULTS.get(zone, 540)
         if zone_stats_df is not None:
             row = zone_stats_df[zone_stats_df["INCIDENT_DISPATCH_AREA"] == zone]
             if not row.empty:
-                if "avg_response_seconds" in row.columns:
-                    static_time = float(row["avg_response_seconds"].iloc[0])
                 if "avg_dispatch_seconds" in row.columns:
                     dispatch_sec = float(row["avg_dispatch_seconds"].iloc[0])
                 if "avg_travel_seconds" in row.columns:
                     travel_sec = float(row["avg_travel_seconds"].iloc[0])
                 if "svi_score" in row.columns:
                     svi = float(row["svi_score"].iloc[0])
+
+        # Apply weather penalty to travel component
+        weather_factor = _weather_travel_factor(precipitation, windspeed)
+        travel_sec *= weather_factor
+        static_time = dispatch_sec + travel_sec
 
         # Staged travel time: drive from the nearest staging point to this zone
         dst_lon, dst_lat = ZONE_CENTROIDS.get(zone, (0, 0))
@@ -164,7 +174,8 @@ def _compute_dynamic_counterfactual(
                             best_drive = min(best_drive, drive_time[(src_zone, zone)])
             # Haversine fallback from staging point to zone centroid
             dist_km = _haversine_km(stg_lon, stg_lat, dst_lon, dst_lat)
-            t = dist_km / 25.0 * 3600
+            effective_speed = 25.0 / weather_factor
+            t = dist_km / effective_speed * 3600
             best_drive = min(best_drive, t)
 
         # Staging only improves travel component; dispatch stays the same

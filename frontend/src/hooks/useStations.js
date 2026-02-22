@@ -9,14 +9,11 @@ export function useStations() {
     queryKey: ['stations'],
     queryFn: async () => {
       if (USE_MOCK_DATA) return EMPTY_FC;
-      try {
-        const { data } = await axios.get(`${API_BASE_URL}/api/stations`);
-        return data;
-      } catch (err) {
-        console.warn('Stations API error, returning empty:', err.message);
-        return EMPTY_FC;
-      }
+      const { data } = await axios.get(`${API_BASE_URL}/api/stations`);
+      return data;
     },
-    staleTime: Infinity,
+    staleTime: 5 * 60 * 1000,
+    retry: 3,
+    retryDelay: 1000,
   });
 }
