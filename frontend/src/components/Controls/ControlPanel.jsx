@@ -22,7 +22,7 @@ function getActivePreset(controls) {
   return null;
 }
 
-export default function ControlPanel({ controls, onControlChange, layerVisibility, onLayerChange, onApplyScenario }) {
+export default function ControlPanel({ controls, onControlChange, layerVisibility, onLayerChange, onApplyScenario, isPlaying, onTogglePlay }) {
   const activePreset = getActivePreset(controls);
 
   const presetButton = (key, label) => {
@@ -60,7 +60,7 @@ export default function ControlPanel({ controls, onControlChange, layerVisibilit
       </div>
 
       <Divider />
-      <TimeSlider value={controls.hour} onChange={(v) => onControlChange('hour', v)} />
+      <TimeSlider value={controls.hour} onChange={(v) => onControlChange('hour', v)} isPlaying={isPlaying} onTogglePlay={onTogglePlay} />
       <Divider />
       <DayPicker value={controls.dow} onChange={(v) => onControlChange('dow', v)} />
       <Divider />

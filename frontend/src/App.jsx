@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { debounce } from 'lodash';
 import Header from './components/Header';
 import MapContainer from './components/Map/MapContainer';
@@ -10,6 +10,7 @@ import { useStaging } from './hooks/useStaging';
 import { useCounterfactual } from './hooks/useCounterfactual';
 import { useZoneHistory } from './hooks/useZoneHistory';
 import { DEMO_SCENARIOS, WEATHER_PRESETS } from './constants';
+import AiPanel from './components/Chat/AiPanel';
 
 const DEFAULT_CONTROLS = {
   hour: 20,
@@ -40,7 +41,9 @@ export default function App() {
     heatmap: true,
     staging: true,
     coverage: true,
+    stations: false,
   });
+  const [isPlaying, setIsPlaying] = useState(false);
 
   const debouncedSetQuery = useMemo(
     () => debounce((c) => setQueryControls(c), 300),
@@ -77,6 +80,38 @@ export default function App() {
     setSelectedZone((prev) => (prev === zone ? null : zone));
   }, []);
 
+  // "Watch the Wave" — advance hour every 1.5s, stop when reaching hour 23
+  useEffect(() => {
+    if (!isPlaying) return;
+    const id = setInterval(() => {
+      setControls((prev) => {
+        const nextHour = prev.hour >= 23 ? 23 : prev.hour + 1;
+        const next = { ...prev, hour: nextHour };
+        setQueryControls(next);
+        return next;
+      });
+      // Check if we've reached 23 to stop (read outside updater to avoid nesting)
+    }, 1500);
+    return () => clearInterval(id);
+  }, [isPlaying]);
+
+  // Stop animation when hour reaches 23
+  useEffect(() => {
+    if (isPlaying && controls.hour >= 23) {
+      setIsPlaying(false);
+    }
+  }, [controls.hour, isPlaying]);
+
+  const handleTogglePlay = useCallback(() => setIsPlaying((p) => !p), []);
+
+  const handleAiControlsUpdate = useCallback((partial) => {
+    setControls((prev) => {
+      const resolved = { ...prev, ...partial };
+      setQueryControls(resolved);
+      return resolved;
+    });
+  }, []);
+
   const params = resolveWeather(queryControls);
 
   const { data: heatmapData } = useHeatmap(params);
@@ -97,6 +132,8 @@ export default function App() {
           layerVisibility={layerVisibility}
           onLayerChange={handleLayerChange}
           onApplyScenario={handleApplyScenario}
+          isPlaying={isPlaying}
+          onTogglePlay={handleTogglePlay}
         />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
           <MapContainer
@@ -113,6 +150,12 @@ export default function App() {
               onClose={() => setSelectedZone(null)}
             />
           )}
+          <AiPanel
+            heatmapData={heatmapData}
+            counterfactualData={counterfactualData}
+            controls={controls}
+            onControlsUpdate={handleAiControlsUpdate}
+          />
         </div>
       </div>
       <ImpactPanel data={counterfactualData} isLoading={cfLoading} selectedBorough={zoneHistoryData?.borough || null} />
