@@ -160,7 +160,7 @@ export default function App() {
           />
         </div>
       </div>
-      <ImpactPanel data={counterfactualData} isLoading={cfLoading} selectedBorough={zoneHistoryData?.borough || null} overlays={overlays} toggleOverlay={toggleOverlay} />
+      <ImpactPanel data={counterfactualData} isLoading={cfLoading} selectedBorough={zoneHistoryData?.borough || null} selectedZone={selectedZone} overlays={overlays} toggleOverlay={toggleOverlay} />
     </>
   );
 }

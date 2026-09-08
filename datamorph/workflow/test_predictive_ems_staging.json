@@ -1,0 +1,184 @@
+{
+  "workflow": "test_predictive_ems_staging",
+  "project": "dev",
+  "description": "FirstWave predictive EMS ambulance-staging pipeline, rebuilt in datamorph.ai primitives. 8 stages: 4 DuckDB SQL pipelines + 4 Python actions.",
+  "source_of_truth": "pipeline/01..08_*.py",
+  "conventions": {
+    "dayofweek": "0=Monday ... 6=Sunday",
+    "geojson_coords": "[longitude, latitude]",
+    "frozen": ["FEATURE_COLS order", "API field names"]
+  },
+
+  "tasks": [
+    {
+      "id": "duckdb_pipeline_01_ingest",
+      "type": "DuckDB Pipeline",
+      "stage": 1,
+      "depends_on": [],
+      "nodes": [
+        { "node": "ems_raw_csv", "kind": "source", "format": "CSV",
+          "path": "https://data.cityofnewyork.us/api/views/76xm-jjuj/rows.csv?accessType=DOWNLOAD",
+          "options": { "ignore_errors": true } },
+        { "node": "proc_sql_1", "kind": "processor", "processor": "SQL",
+          "relations": ["ems_raw_csv"], "sql_file": "sql/proc_sql_1_ingest_clean.sql" },
+        { "node": "proc_quality_1", "kind": "processor", "processor": "Quality Check",
+          "relations": ["proc_sql_1"], "rules_ref": "quality/quality_checks.yaml#proc_quality_1" },
+        { "node": "incidents_cleaned", "kind": "sink", "format": "Parquet",
+          "relations": ["proc_quality_1"], "path": "pipeline/data/incidents_cleaned.parquet",
+          "compression": "SNAPPY" }
+      ]
+    },
+    {
+      "id": "fetch_lookups",
+      "type": "Python",
+      "stage": 2,
+      "depends_on": ["duckdb_pipeline_01_ingest"],
+      "script": "python/fetch_lookups.py",
+      "outputs": [
+        "pipeline/data/_weather_tmp.parquet",
+        "pipeline/data/_holidays_tmp.parquet",
+        "pipeline/data/_school_tmp.parquet",
+        "pipeline/data/_events_tmp.parquet",
+        "pipeline/data/_mta_tmp.parquet"
+      ],
+      "external": [
+        "Open-Meteo archive-api.open-meteo.com/v1/archive",
+        "NYC Open Data bkfu-528j (events)",
+        "data.ny.gov i8rn-y4np + j6d2-s8m2 (MTA)"
+      ]
+    },
+    {
+      "id": "weather_enrich",
+      "type": "DuckDB Pipeline",
+      "stage": 2,
+      "depends_on": ["fetch_lookups"],
+      "nodes": [
+        { "node": "incidents_cleaned", "kind": "source", "format": "Parquet", "path": "pipeline/data/incidents_cleaned.parquet" },
+        { "node": "weather",  "kind": "source", "format": "Parquet", "path": "pipeline/data/_weather_tmp.parquet" },
+        { "node": "holidays", "kind": "source", "format": "Parquet", "path": "pipeline/data/_holidays_tmp.parquet" },
+        { "node": "school",   "kind": "source", "format": "Parquet", "path": "pipeline/data/_school_tmp.parquet" },
+        { "node": "events",   "kind": "source", "format": "Parquet", "path": "pipeline/data/_events_tmp.parquet" },
+        { "node": "mta",      "kind": "source", "format": "Parquet", "path": "pipeline/data/_mta_tmp.parquet" },
+        { "node": "proc_sql_2", "kind": "processor", "processor": "SQL",
+          "relations": ["incidents_cleaned", "weather", "holidays", "school", "events", "mta"],
+          "sql_file": "sql/proc_sql_2_enrich_join.sql" },
+        { "node": "proc_quality_2", "kind": "processor", "processor": "Quality Check",
+          "relations": ["proc_sql_2"], "rules_ref": "quality/quality_checks.yaml#proc_quality_2" },
+        { "node": "incidents_cleaned_out", "kind": "sink", "format": "Parquet",
+          "relations": ["proc_quality_2"], "path": "pipeline/data/incidents_cleaned.parquet",
+          "mode": "overwrite", "adds_columns": [
+            "temperature_2m", "precipitation", "windspeed_10m", "weathercode",
+            "is_severe_weather", "is_extreme_heat", "is_heat_emergency",
+            "is_holiday", "is_school_day", "is_major_event", "subway_disruption_idx"
+          ] }
+      ]
+    },
+    {
+      "id": "duckdb_pipeline_03_svi",
+      "type": "DuckDB Pipeline",
+      "stage": 3,
+      "depends_on": ["weather_enrich"],
+      "nodes": [
+        { "node": "incidents_cleaned", "kind": "source", "format": "Parquet", "path": "pipeline/data/incidents_cleaned.parquet" },
+        { "node": "zone_svi_lookup", "kind": "source", "format": "JSON", "path": "datamorph/seeds/zone_svi_lookup.json" },
+        { "node": "proc_sql_3", "kind": "processor", "processor": "SQL",
+          "relations": ["incidents_cleaned", "zone_svi_lookup"], "sql_file": "sql/proc_sql_3_svi_join.sql" },
+        { "node": "proc_quality_3", "kind": "processor", "processor": "Quality Check",
+          "relations": ["proc_sql_3"], "rules_ref": "quality/quality_checks.yaml#proc_quality_3" },
+        { "node": "incidents_cleaned_out", "kind": "sink", "format": "Parquet",
+          "relations": ["proc_quality_3"], "path": "pipeline/data/incidents_cleaned.parquet",
+          "mode": "overwrite", "adds_columns": ["svi_score"] }
+      ]
+    },
+    {
+      "id": "duckdb_pipeline_04_aggregate",
+      "type": "DuckDB Pipeline",
+      "stage": 4,
+      "depends_on": ["duckdb_pipeline_03_svi"],
+      "nodes": [
+        { "node": "incidents_cleaned", "kind": "source", "format": "Parquet", "path": "pipeline/data/incidents_cleaned.parquet" },
+        { "node": "proc_sql_4a", "kind": "processor", "processor": "SQL",
+          "relations": ["incidents_cleaned"], "sql_file": "sql/proc_sql_4a_aggregate.sql" },
+        { "node": "proc_sql_4b", "kind": "processor", "processor": "SQL",
+          "relations": ["incidents_cleaned"], "sql_file": "sql/proc_sql_4b_zone_baselines.sql" },
+        { "node": "proc_sql_4c", "kind": "processor", "processor": "SQL",
+          "relations": ["incidents_cleaned"], "sql_file": "sql/proc_sql_4c_zone_stats.sql" },
+        { "node": "proc_quality_4", "kind": "processor", "processor": "Quality Check",
+          "relations": ["proc_sql_4a", "proc_sql_4b", "proc_sql_4c"], "rules_ref": "quality/quality_checks.yaml#proc_quality_4" },
+        { "node": "incidents_aggregated", "kind": "sink", "format": "Parquet",
+          "relations": ["proc_sql_4a"], "path": "pipeline/data/incidents_aggregated.parquet" },
+        { "node": "zone_baselines", "kind": "sink", "format": "Parquet",
+          "relations": ["proc_sql_4b"], "path": "backend/artifacts/zone_baselines.parquet" },
+        { "node": "zone_stats", "kind": "sink", "format": "Parquet",
+          "relations": ["proc_sql_4c"], "path": "backend/artifacts/zone_stats.parquet" }
+      ]
+    },
+    {
+      "id": "train_demand_model",
+      "type": "Python",
+      "stage": 5,
+      "depends_on": ["duckdb_pipeline_04_aggregate"],
+      "script": "python/train_demand_model.py",
+      "inputs": ["pipeline/data/incidents_aggregated.parquet", "backend/artifacts/zone_baselines.parquet", "backend/artifacts/zone_stats.parquet"],
+      "outputs": ["backend/artifacts/demand_model.pkl"],
+      "gate": "Test RMSE < 4.0 (fail > 6.0); zone_baseline_avg in top-3 importances"
+    },
+    {
+      "id": "osmnx_drive_matrix",
+      "type": "Python",
+      "stage": 6,
+      "parallel": true,
+      "depends_on": [],
+      "script": "python/osmnx_drive_matrix.py",
+      "inputs": ["OpenStreetMap (NYC)", "data/ems_stations.json"],
+      "outputs": ["backend/artifacts/drive_time_matrix.pkl", "backend/artifacts/nyc_graph.pkl", "backend/artifacts/zone_nodes.pkl"],
+      "runtime": "~30-60 min",
+      "fallback": "Haversine x1.35 circuity / 25 km/h"
+    },
+    {
+      "id": "staging_optimizer_validate",
+      "type": "Python",
+      "stage": 7,
+      "depends_on": ["train_demand_model", "osmnx_drive_matrix"],
+      "script": "python/staging_optimizer_validate.py",
+      "inputs": ["backend/artifacts/demand_model.pkl", "backend/artifacts/zone_baselines.parquet", "backend/artifacts/zone_stats.parquet"],
+      "outputs": [],
+      "control": { "type": "Branch", "on_success": "counterfactual_precompute", "on_fail": "slack_alert_halt" }
+    },
+    {
+      "id": "counterfactual_precompute",
+      "type": "Python",
+      "stage": 8,
+      "depends_on": ["staging_optimizer_validate", "train_demand_model", "osmnx_drive_matrix"],
+      "script": "python/counterfactual_precompute.py",
+      "inputs": [
+        "backend/artifacts/demand_model.pkl", "backend/artifacts/drive_time_matrix.pkl",
+        "backend/artifacts/zone_baselines.parquet", "backend/artifacts/zone_stats.parquet",
+        "pipeline/data/incidents_cleaned.parquet", "data/ems_stations.json"
+      ],
+      "outputs": ["backend/artifacts/counterfactual_summary.parquet", "backend/artifacts/counterfactual_raw.parquet"],
+      "headline": "~61% -> ~83% within 8min, ~147s median saved, Q4 biggest gain"
+    },
+    {
+      "id": "notify",
+      "type": "Slack",
+      "stage": 9,
+      "depends_on": ["counterfactual_precompute"],
+      "message": "counterfactual AVAILABLE. {static}%->{staged}% within 8min, {saved}s saved. Bronx biggest gain."
+    }
+  ],
+
+  "edges": [
+    ["duckdb_pipeline_01_ingest", "fetch_lookups"],
+    ["fetch_lookups", "weather_enrich"],
+    ["weather_enrich", "duckdb_pipeline_03_svi"],
+    ["duckdb_pipeline_03_svi", "duckdb_pipeline_04_aggregate"],
+    ["duckdb_pipeline_04_aggregate", "train_demand_model"],
+    ["train_demand_model", "staging_optimizer_validate"],
+    ["osmnx_drive_matrix", "staging_optimizer_validate"],
+    ["staging_optimizer_validate", "counterfactual_precompute"],
+    ["train_demand_model", "counterfactual_precompute"],
+    ["osmnx_drive_matrix", "counterfactual_precompute"],
+    ["counterfactual_precompute", "notify"]
+  ]
+}

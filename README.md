@@ -195,20 +195,6 @@ Every borough except Staten Island is currently averaging over this threshold. F
 
 ---
 
-## Team
-
-| Name | Role | Module |
-|---|---|---|
-| Ashwin Vijayakumar | Backend Lead | FastAPI server, ML inference, PostGIS |
-| Vaibhav | Frontend Lead + Integration | React dashboard, Mapbox, all UI components |
-| Praneel | Pipeline Lead | DuckDB data pipeline, XGBoost training, counterfactual engine |
-| Ansh | PM + Demo | Devpost, pitch deck, demo video, station data |
-
-**Hackathon:** GT Hacklytics 2026
-**Tracks:** Healthcare (primary) · SafetyKit: Best AI for Human Safety (secondary)
-
----
-
 ## Running the App
 
 ### Prerequisites

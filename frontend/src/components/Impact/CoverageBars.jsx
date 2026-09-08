@@ -1,13 +1,14 @@
 import { formatSeconds, formatPct } from '../../utils/formatters';
 
-export default function CoverageBars({ data, selectedBorough }) {
+export default function CoverageBars({ data, selectedBorough, selectedZone }) {
   if (!data) return null;
 
   const boroughData = selectedBorough && data.by_borough?.[selectedBorough];
+  const zoneData = selectedZone && data.by_zone?.[selectedZone];
   const staticPct = boroughData ? boroughData.static : data.pct_within_8min_static;
   const stagedPct = boroughData ? boroughData.staged : data.pct_within_8min_staged;
-  const medianSaved = boroughData ? boroughData.median_saved_sec : data.median_seconds_saved;
-  const scopeLabel = boroughData ? selectedBorough : 'CITYWIDE';
+  const medianSaved = zoneData ? zoneData.seconds_saved : (boroughData ? boroughData.median_saved_sec : data.median_seconds_saved);
+  const scopeLabel = zoneData ? selectedZone : (boroughData ? selectedBorough : 'CITYWIDE');
 
   return (
     <div style={{ flex: '0 0 40%', padding: '0 12px' }}>
@@ -48,7 +49,7 @@ export default function CoverageBars({ data, selectedBorough }) {
         background: '#1a2a3a', borderRadius: 8, padding: '12px 16px',
         textAlign: 'center',
       }}>
-        <div style={{ fontSize: 10, color: '#8899aa', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 4 }}>Median Response Time Saved</div>
+        <div style={{ fontSize: 10, color: '#8899aa', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 4 }}>{zoneData ? 'Response Time Saved' : 'Median Response Time Saved'}</div>
         <div style={{ fontSize: 48, fontWeight: 800, color: '#42A5F5', fontFamily: "'DM Mono', monospace", lineHeight: 1.1 }}>
           {formatSeconds(medianSaved)}
         </div>
