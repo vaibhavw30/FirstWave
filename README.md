@@ -187,6 +187,14 @@ All data sources are free and publicly available. No proprietary data.
 
 ---
 
+## Why the 8-Minute Threshold?
+
+The 8-minute mark (480 seconds) is the clinical standard for EMS response. For cardiac arrest:
+- Response within 4 minutes: ~50% survival rate
+- Response within 8 minutes: ~25% survival rate
+- Response at 10+ minutes (Bronx average): ~10% survival rate
+
+Every borough except Staten Island is currently averaging over this threshold. FirstWave is designed specifically to close that gap.
 ## Data Quality
 
 9 sequential quality filters applied before training:
@@ -397,15 +405,6 @@ firstwave/
 ```
 
 ---
-
-## Team
-
-| Name | Role |
-|---|---|
-| **Ashwin Vijayakumar** | Backend Lead — FastAPI, XGBoost inference, PostGIS, counterfactual engine, AI Dispatcher endpoint |
-| **Vaibhav** | Frontend Lead + Integration — React dashboard, Mapbox, all UI components, equity layer, animations |
-| **Praneel** | Pipeline Lead — DuckDB pipeline, XGBoost training, drive-time matrix, counterfactual precomputation |
-| **Ansh** | PM + Demo — Devpost, pitch deck, demo video, EMS station data |
 
 **Hackathon:** GT Hacklytics 2026
 **Tracks:** Healthcare (primary) · SafetyKit: Best AI for Human Safety (secondary)
