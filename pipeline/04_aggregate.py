@@ -10,6 +10,7 @@ Outputs:
   $FW_ARTIFACTS_DIR/zone_stats.parquet             per-zone response stats, train + valid responses
   $FW_ARTIFACTS_DIR/hourly_counts.parquet          replay lag source, 2024-12-01 → 2026-06-30
   $FW_ARTIFACTS_DIR/calendar_daily.parquet         replay calendar flags, 2025-01-01 → 2026-06-30
+  $FW_ARTIFACTS_DIR/weather_hourly.parquet         replay weather + training flags, 2025-01-01 → 2026-06-30
 
 Run: python pipeline/04_aggregate.py
 """
@@ -43,6 +44,7 @@ BASELINE = ARTIFACTS_DIR / "zone_baselines.parquet"
 STATS = ARTIFACTS_DIR / "zone_stats.parquet"
 HOURLY_OUT = ARTIFACTS_DIR / "hourly_counts.parquet"
 CAL_OUT = ARTIFACTS_DIR / "calendar_daily.parquet"
+WX_OUT = ARTIFACTS_DIR / "weather_hourly.parquet"
 
 for p in (CLEANED, WEATHER, CALENDAR):
     if not p.exists():
@@ -154,6 +156,15 @@ COPY (
     SELECT * FROM read_parquet('{CALENDAR}') WHERE date >= DATE '{REPLAY_START}'
 ) TO '{CAL_OUT}' (FORMAT PARQUET, COMPRESSION SNAPPY)
 """)
+conn.execute(f"""
+COPY (
+    SELECT date_hour, temperature_2m, precipitation, windspeed_10m,
+           is_severe_weather, is_extreme_heat, is_heat_emergency
+    FROM read_parquet('{WEATHER}')
+    WHERE date_hour >= TIMESTAMP '{REPLAY_START} 00:00:00'
+    ORDER BY date_hour
+) TO '{WX_OUT}' (FORMAT PARQUET, COMPRESSION SNAPPY)
+""")
 
 # ── Step 6: validation ─────────────────────────────────────────────────────────
 counts = {
@@ -161,10 +172,12 @@ counts = {
     "zone_stats": conn.execute(f"SELECT COUNT(*) FROM read_parquet('{STATS}')").fetchone()[0],
     "hourly_counts": conn.execute(f"SELECT COUNT(*) FROM read_parquet('{HOURLY_OUT}')").fetchone()[0],
     "calendar_daily": conn.execute(f"SELECT COUNT(*) FROM read_parquet('{CAL_OUT}')").fetchone()[0],
+    "weather_hourly": conn.execute(f"SELECT COUNT(*) FROM read_parquet('{WX_OUT}')").fetchone()[0],
 }
 expected = {"zone_baselines": 31 * 24 * 7, "zone_stats": 31,
             "hourly_counts": 31 * ((DATA_END - HOURLY_COUNTS_START).days + 1) * 24,
-            "calendar_daily": 5 * ((DATA_END - REPLAY_START).days + 1)}
+            "calendar_daily": 5 * ((DATA_END - REPLAY_START).days + 1),
+            "weather_hourly": 24 * ((DATA_END - REPLAY_START).days + 1)}
 
 print()
 print("=" * 60)

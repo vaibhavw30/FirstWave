@@ -28,6 +28,7 @@ REQUIRED_FILES = [
     "hourly_counts.parquet",
     "calendar_daily.parquet",
     "model_metrics.json",
+    "weather_hourly.parquet",
 ]
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "backend"))
@@ -302,6 +303,9 @@ if hc_path.exists():
 cal_path = ARTIFACTS_DIR / "calendar_daily.parquet"
 if cal_path.exists():
     check("calendar_daily rows", len(pd.read_parquet(cal_path)) == 2_730)
+wx_path = ARTIFACTS_DIR / "weather_hourly.parquet"
+if wx_path.exists():
+    check("weather_hourly rows", len(pd.read_parquet(wx_path)) == 13_104)
 metrics_path = ARTIFACTS_DIR / "model_metrics.json"
 if metrics_path.exists():
     import json

@@ -47,3 +47,41 @@ def calendar_flags(lookup: dict | None, d: dt.date | None, zone_prefix: str) -> 
     if lookup is None or d is None:
         return dict(_DEFAULT_FLAGS)
     return dict(lookup.get((d, zone_prefix), _DEFAULT_FLAGS))
+
+
+# Request defaults when neither the request nor the weather artifact supplies a value.
+DEFAULT_WEATHER = {"temperature": 15.0, "precipitation": 0.0, "windspeed": 10.0}
+WEATHER_FLAG_COLS = ("is_severe_weather", "is_extreme_heat", "is_heat_emergency")
+
+
+def weather_to_lookup(df) -> dict:
+    """weather_hourly rows -> {pd.Timestamp hour: {temperature, precipitation, windspeed, flags...}}."""
+    import pandas as pd
+    lookup = {}
+    for row in df.itertuples(index=False):
+        lookup[pd.Timestamp(row.date_hour)] = {
+            "temperature": float(row.temperature_2m),
+            "precipitation": float(row.precipitation),
+            "windspeed": float(row.windspeed_10m),
+            **{c: int(getattr(row, c)) for c in WEATHER_FLAG_COLS},
+        }
+    return lookup
+
+
+def resolve_weather(lookup: dict | None, d: dt.date, hour: int,
+                    temperature: float | None, precipitation: float | None,
+                    windspeed: float | None) -> tuple[dict, dict | None, str]:
+    """(values, flags, source). If the request gives no weather at all and the
+    artifact has this hour, use the real weather and its training-defined flags
+    ("actual"). Otherwise it is a what-if: request values, defaults for any
+    missing, and flags derived by the forecaster ("request")."""
+    import pandas as pd
+    requested = {"temperature": temperature, "precipitation": precipitation, "windspeed": windspeed}
+    if all(v is None for v in requested.values()) and lookup is not None:
+        row = lookup.get(pd.Timestamp(d) + pd.Timedelta(hours=hour))
+        if row is not None:
+            values = {k: row[k] for k in DEFAULT_WEATHER}
+            flags = {c: row[c] for c in WEATHER_FLAG_COLS}
+            return values, flags, "actual"
+    values = {k: float(v) if v is not None else DEFAULT_WEATHER[k] for k, v in requested.items()}
+    return values, None, "request"

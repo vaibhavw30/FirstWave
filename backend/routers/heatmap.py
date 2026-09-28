@@ -69,6 +69,7 @@ def _build_heatmap_from_predictions(
     zone_stats_df,
     replay_date: dt.date,
     actual: dict,
+    weather: dict,
 ) -> dict:
     counts = list(predicted_counts.values())
     min_count = min(counts) if counts else 0
@@ -113,7 +114,7 @@ def _build_heatmap_from_predictions(
 
     return {
         "type": "FeatureCollection",
-        "query_params": {"hour": hour, "dow": dow, "month": month, "date": replay_date.isoformat()},
+        "query_params": {"hour": hour, "dow": dow, "month": month, "date": replay_date.isoformat(), **weather},
         "features": features,
     }
 
@@ -123,21 +124,24 @@ async def get_heatmap(
     hour: int = Query(..., ge=0, le=23),
     dow: int = Query(..., ge=0, le=6),
     month: int = Query(..., ge=1, le=12),
-    temperature: float = Query(default=15.0),
-    precipitation: float = Query(default=0.0),
-    windspeed: float = Query(default=10.0),
+    # Omit all three to replay the hour's real weather; any value makes it a what-if.
+    temperature: Optional[float] = Query(default=None),
+    precipitation: Optional[float] = Query(default=None),
+    windspeed: Optional[float] = Query(default=None),
     ambulances: int = Query(default=5, ge=1, le=10),
     date: Optional[dt.date] = Query(default=None),
 ):
     from main import ARTIFACTS, MOCK_DATA, ZONE_GEOM_CACHE
     from models.demand_forecaster import DemandForecaster
     from models.lag_features import actual_counts
-    from models.replay import OutOfReplayRange, resolve_request
+    from models.replay import OutOfReplayRange, resolve_request, resolve_weather
 
     try:
         replay_date, dow, month = resolve_request(date, dow, month)
     except OutOfReplayRange as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+    wx, wx_flags, wx_source = resolve_weather(
+        ARTIFACTS["weather_hourly"], replay_date, hour, temperature, precipitation, windspeed)
 
     if ARTIFACTS["demand_model"] is None or ARTIFACTS["baselines"] is None:
         logger.info("Heatmap: model not loaded, returning mock data")
@@ -157,12 +161,13 @@ async def get_heatmap(
                 None,
                 lambda: forecaster.predict_all_zones(
                     hour, dow, month,
-                    temperature, precipitation, windspeed,
+                    wx["temperature"], wx["precipitation"], wx["windspeed"],
                     ARTIFACTS["zone_stats"],
                     ARTIFACTS["baselines"],
                     replay_date=replay_date,
                     counts_wide=ARTIFACTS["hourly_counts"],
                     calendar=ARTIFACTS["calendar_daily"],
+                    weather_flags=wx_flags,
                 ),
             ),
             timeout=5.0,
@@ -176,7 +181,7 @@ async def get_heatmap(
         result = _build_heatmap_from_predictions(
             predicted_counts, hour, dow, month,
             ZONE_GEOM_CACHE, ARTIFACTS["zone_stats"],
-            replay_date, actual,
+            replay_date, actual, {**wx, "weather_source": wx_source},
         )
         return JSONResponse(content=result, headers={"X-Data-Source": "model"})
 

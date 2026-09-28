@@ -36,6 +36,11 @@ def _write_artifacts(art):
         "is_holiday": 0, "is_school_day": 1, "is_major_event": 0,
     }).to_parquet(art / "calendar_daily.parquet", index=False)
     (art / "model_metrics.json").write_text('{"objective": "count:poisson"}')
+    hours = pd.date_range("2025-01-01", "2026-06-30 23:00", freq="h")
+    pd.DataFrame({
+        "date_hour": hours, "temperature_2m": 20.0, "precipitation": 0.0, "windspeed_10m": 7.0,
+        "is_severe_weather": 0, "is_extreme_heat": 0, "is_heat_emergency": 0,
+    }).to_parquet(art / "weather_hourly.parquet", index=False)
 
 
 @pytest.fixture(scope="module")
@@ -64,7 +69,9 @@ def test_heatmap_with_date(api):
     r = client.get("/api/heatmap", params={"hour": 20, "dow": 4, "month": 10, "date": "2025-10-10"})
     assert r.status_code == 200 and r.headers["X-Data-Source"] == "model"
     body = r.json()
-    assert body["query_params"] == {"hour": 20, "dow": 4, "month": 10, "date": "2025-10-10"}
+    qp = body["query_params"]
+    assert {k: qp[k] for k in ("hour", "dow", "month", "date")} == {"hour": 20, "dow": 4, "month": 10, "date": "2025-10-10"}
+    assert {"temperature", "precipitation", "windspeed", "weather_source"} <= set(qp)
     assert len(body["features"]) == 31
     k7 = next(f for f in body["features"] if f["properties"]["zone"] == "K7")["properties"]
     assert k7["actual_count"] == synthetic_count("K7", pd.Timestamp("2025-10-10 20:00"))
@@ -135,3 +142,30 @@ def test_reload_clears_staging_cache(api):
     assert _cached_heatmap_and_staging.cache_info().currsize > 0
     assert client.post("/reload").status_code == 200
     assert _cached_heatmap_and_staging.cache_info().currsize == 0
+
+
+def test_health_reports_weather_artifact(api):
+    client, _ = api
+    assert client.get("/health").json()["artifacts"]["weather_hourly"] is True
+
+
+def test_replay_uses_actual_weather_by_default(api):
+    client, _ = api
+    body = client.get("/api/heatmap", params={"hour": 20, "dow": 4, "month": 10, "date": "2025-10-10"}).json()
+    assert body["query_params"]["weather_source"] == "actual"
+    assert body["query_params"]["temperature"] == 20.0
+
+
+def test_explicit_weather_is_what_if(api):
+    client, _ = api
+    body = client.get("/api/heatmap", params={
+        "hour": 20, "dow": 4, "month": 10, "date": "2025-10-10",
+        "temperature": 8, "precipitation": 8, "windspeed": 30}).json()
+    assert body["query_params"]["weather_source"] == "request"
+    assert body["query_params"]["precipitation"] == 8.0
+
+
+def test_staging_with_actual_weather(api):
+    client, _ = api
+    r = client.get("/api/staging", params={"hour": 18, "dow": 2, "month": 7, "date": "2025-07-30"})
+    assert r.status_code == 200 and r.headers["X-Data-Source"] == "model"

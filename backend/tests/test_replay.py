@@ -51,3 +51,36 @@ def test_calendar_lookup_and_defaults():
     assert calendar_flags(lookup, D(2025, 10, 21), "K") == default
     assert calendar_flags(None, D(2025, 10, 20), "K") == default
     assert calendar_flags(lookup, None, "K") == default
+
+
+WX = pd.DataFrame({
+    "date_hour": [pd.Timestamp("2025-07-30 18:00")],
+    "temperature_2m": [28.2], "precipitation": [8.2], "windspeed_10m": [5.8],
+    "is_severe_weather": [1], "is_extreme_heat": [0], "is_heat_emergency": [1],
+})
+
+
+def test_actual_weather_when_request_omits_it():
+    from models.replay import resolve_weather, weather_to_lookup
+    values, flags, source = resolve_weather(weather_to_lookup(WX), D(2025, 7, 30), 18, None, None, None)
+    assert source == "actual"
+    assert values == {"temperature": 28.2, "precipitation": 8.2, "windspeed": 5.8}
+    assert flags == {"is_severe_weather": 1, "is_extreme_heat": 0, "is_heat_emergency": 1}
+
+
+def test_explicit_weather_is_a_what_if():
+    from models.replay import resolve_weather, weather_to_lookup
+    values, flags, source = resolve_weather(weather_to_lookup(WX), D(2025, 7, 30), 18, 8.0, None, None)
+    assert source == "request"
+    assert values == {"temperature": 8.0, "precipitation": 0.0, "windspeed": 10.0}
+    assert flags is None
+
+
+@pytest.mark.parametrize("lookup_df,hour", [(None, 18), (WX, 17)])
+def test_missing_weather_falls_back_to_defaults(lookup_df, hour):
+    from models.replay import resolve_weather, weather_to_lookup
+    lookup = None if lookup_df is None else weather_to_lookup(lookup_df)
+    values, flags, source = resolve_weather(lookup, D(2025, 7, 30), hour, None, None, None)
+    assert source == "request"
+    assert values == {"temperature": 15.0, "precipitation": 0.0, "windspeed": 10.0}
+    assert flags is None

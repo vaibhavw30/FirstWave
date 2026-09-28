@@ -33,6 +33,7 @@ ARTIFACTS: dict = {
     "hourly_counts": None,     # wide: index date_hour, one column per zone
     "calendar_daily": None,    # {(date, zone_prefix): flags}
     "model_metrics": None,     # dict from model_metrics.json
+    "weather_hourly": None,    # {hour Timestamp: real weather + flags} for replay
 }
 
 MOCK_DATA: dict = {}
@@ -55,11 +56,16 @@ def load_all_artifacts():
         ("hourly_counts", ARTIFACTS_DIR / "hourly_counts.parquet", "parquet"),
         ("calendar_daily", ARTIFACTS_DIR / "calendar_daily.parquet", "parquet"),
         ("model_metrics", ARTIFACTS_DIR / "model_metrics.json", "json"),
+        ("weather_hourly", ARTIFACTS_DIR / "weather_hourly.parquet", "parquet"),
     ]
 
     from models.lag_features import to_wide
-    from models.replay import calendar_to_lookup
-    postprocess = {"hourly_counts": to_wide, "calendar_daily": calendar_to_lookup}
+    from models.replay import calendar_to_lookup, weather_to_lookup
+    postprocess = {
+        "hourly_counts": to_wide,
+        "calendar_daily": calendar_to_lookup,
+        "weather_hourly": weather_to_lookup,
+    }
 
     for key, path, loader in artifact_configs:
         if not path.exists():
@@ -199,6 +205,7 @@ def _artifact_status() -> dict:
         "counterfactual": ARTIFACTS["counterfactual_summary"] is not None,
         "hourly_counts": ARTIFACTS["hourly_counts"] is not None,
         "calendar_daily": ARTIFACTS["calendar_daily"] is not None,
+        "weather_hourly": ARTIFACTS["weather_hourly"] is not None,
     }
 
 

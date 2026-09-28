@@ -98,6 +98,11 @@ def test_04_outputs(run_dirs):
     assert hc["date_hour"].min() == pd.Timestamp("2024-12-01 00:00")
     assert hc["date_hour"].max() == pd.Timestamp("2026-06-30 23:00")
     assert len(pd.read_parquet(art_dir / "calendar_daily.parquet")) == 2_730
+    wx = pd.read_parquet(art_dir / "weather_hourly.parquet")
+    assert len(wx) == 13_104
+    assert wx["date_hour"].min() == pd.Timestamp("2025-01-01 00:00")
+    assert {"temperature_2m", "precipitation", "windspeed_10m", "is_severe_weather",
+            "is_extreme_heat", "is_heat_emergency"} <= set(wx.columns)
 
 
 def test_05_trains_and_reports(run_dirs):
