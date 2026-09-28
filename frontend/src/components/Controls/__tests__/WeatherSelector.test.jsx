@@ -8,17 +8,18 @@ describe('WeatherSelector', () => {
     expect(screen.getByText('Weather')).toBeInTheDocument();
   });
 
-  it('renders all three weather options', () => {
+  it('renders all four weather options', () => {
     render(<WeatherSelector value="none" onChange={() => {}} />);
     expect(screen.getByText('Clear')).toBeInTheDocument();
     expect(screen.getByText('Light Rain')).toBeInTheDocument();
     expect(screen.getByText('Heavy Storm')).toBeInTheDocument();
+    expect(screen.getByText('Actual')).toBeInTheDocument();
   });
 
-  it('renders 3 radio inputs', () => {
+  it('renders 4 radio inputs', () => {
     render(<WeatherSelector value="none" onChange={() => {}} />);
     const radios = screen.getAllByRole('radio');
-    expect(radios.length).toBe(3);
+    expect(radios.length).toBe(4);
   });
 
   it('has the correct radio checked', () => {
@@ -45,5 +46,7 @@ describe('WeatherSelector', () => {
     expect(screen.getByText('12°C / 2mm')).toBeInTheDocument();
     // Heavy Storm: 8°C / 8mm
     expect(screen.getByText('8°C / 8mm')).toBeInTheDocument();
+    // Actual: the replayed hour's real weather
+    expect(screen.getByText('replay hour')).toBeInTheDocument();
   });
 });

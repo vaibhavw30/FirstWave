@@ -3,14 +3,18 @@ import { dowFromDate, monthFromDate } from './replayDate';
 
 export function buildQueryParams(controls) {
   const preset = WEATHER_PRESETS[controls.weather] || WEATHER_PRESETS.none;
-  return {
+  const params = {
     date: controls.date,
     hour: controls.hour,
     dow: dowFromDate(controls.date),
     month: monthFromDate(controls.date),
-    temperature: preset.temperature,
-    precipitation: preset.precipitation,
-    windspeed: preset.windspeed,
-    ambulances: controls.ambulances,
   };
+  // 'actual' sends no weather, so the API replays the hour's real weather.
+  if (!preset.actual) {
+    params.temperature = preset.temperature;
+    params.precipitation = preset.precipitation;
+    params.windspeed = preset.windspeed;
+  }
+  params.ambulances = controls.ambulances;
+  return params;
 }

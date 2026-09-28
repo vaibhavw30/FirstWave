@@ -22,7 +22,7 @@ export default function WeatherSelector({ value, onChange }) {
             />
             <span style={{ color: value === key ? '#fff' : '#aaa' }}>{preset.label}</span>
             <span style={{ color: '#555', fontSize: 10, marginLeft: 'auto' }}>
-              {preset.temperature}&deg;C / {preset.precipitation}mm
+              {preset.actual ? 'replay hour' : `${preset.temperature}°C / ${preset.precipitation}mm`}
             </span>
           </label>
         ))}

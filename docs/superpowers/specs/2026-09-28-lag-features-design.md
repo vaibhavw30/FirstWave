@@ -300,3 +300,11 @@ final metrics from `model_metrics.json`.
   for this reason.
 - **Lag model at serve time depends on history existing:** outside the replay range
   there are no lags. This is intrinsic to the replay design (no live feed).
+
+## 11. Addendum (2026-09-28, after final review) — replay weather and weather flags
+
+Decided with the user after the whole-branch review; supersedes the weather parts of §6.1 and §7.
+
+1. **Replay uses the hour's real weather by default.** Script 04 writes `backend/artifacts/weather_hourly.parquet` (2025-01-01 → 2026-06-30, 13,104 rows: `date_hour, temperature_2m, precipitation, windspeed_10m, is_severe_weather, is_extreme_heat, is_heat_emergency`). `/api/heatmap` and `/api/staging` make `temperature`, `precipitation`, `windspeed` optional. If all three are omitted and the artifact has the hour, the model gets that hour's real weather and its training-defined flags. If any is given, it is a what-if (missing values default to 15 / 0 / 10). Heatmap `query_params` adds `temperature`, `precipitation`, `windspeed`, `weather_source` (`"actual"` | `"request"`). `/health` adds `weather_hourly`.
+2. **Serving weather flags match training.** Without historical flags, `is_severe_weather` = any precipitation > 0 (training uses WMO precipitation codes); previously `precipitation > 5`. Script 08 passes each incident hour's historical flags.
+3. **Frontend.** The weather selector gains **Actual** (default), which sends no weather params. All three demo presets use `weather: 'actual'`.

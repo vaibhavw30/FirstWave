@@ -57,16 +57,19 @@ export const REPLAY_MIN_DATE = '2025-01-01';
 export const REPLAY_MAX_DATE = '2026-06-30';
 
 export const DEMO_SCENARIOS = {
-  friday_peak: { date: '2025-10-10', hour: 20, temperature: 15, precipitation: 0, windspeed: 10, ambulances: 5 },
-  monday_quiet: { date: '2025-10-20', hour: 4, temperature: 15, precipitation: 0, windspeed: 10, ambulances: 5 },
+  // Presets replay each hour's real weather (weather: 'actual').
+  friday_peak: { date: '2025-10-10', hour: 20, weather: 'actual', ambulances: 5 },
+  monday_quiet: { date: '2025-10-20', hour: 4, weather: 'actual', ambulances: 5 },
   // Rainiest Wednesday 6 PM of 2025 per Open-Meteo: 8.2 mm/h, WMO 65 (heavy rain).
-  storm: { date: '2025-07-30', hour: 18, temperature: 8, precipitation: 8, windspeed: 30, ambulances: 7 },
+  storm: { date: '2025-07-30', hour: 18, weather: 'actual', ambulances: 7 },
 };
 
 export const WEATHER_PRESETS = {
   none: { temperature: 15, precipitation: 0, windspeed: 10, label: 'Clear' },
   light: { temperature: 12, precipitation: 2, windspeed: 15, label: 'Light Rain' },
   heavy: { temperature: 8, precipitation: 8, windspeed: 30, label: 'Heavy Storm' },
+  // The replayed hour's real weather; the API picks it when no weather params are sent.
+  actual: { actual: true, label: 'Actual' },
 };
 
 export const DOW_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];

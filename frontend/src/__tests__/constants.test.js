@@ -123,9 +123,15 @@ describe('DEMO_SCENARIOS', () => {
     expect(dowFromDate(DEMO_SCENARIOS.monday_quiet.date)).toBe(0);
   });
 
-  it('storm has high precipitation and windspeed', () => {
-    expect(DEMO_SCENARIOS.storm.precipitation).toBeGreaterThan(5);
-    expect(DEMO_SCENARIOS.storm.windspeed).toBeGreaterThan(20);
+  it('storm replays the rainiest 2025 Wednesday 6 PM with its actual weather', () => {
+    expect(DEMO_SCENARIOS.storm.date).toBe('2025-07-30');
+    expect(DEMO_SCENARIOS.storm.hour).toBe(18);
+    expect(DEMO_SCENARIOS.storm.weather).toBe('actual');
+  });
+
+  it('every scenario replays actual weather', () => {
+    Object.values(DEMO_SCENARIOS).forEach(s => expect(WEATHER_PRESETS[s.weather]).toBeDefined());
+    expect(DEMO_SCENARIOS.friday_peak.weather).toBe('actual');
   });
 
   it('all scenarios have valid hour (0-23) and an in-range replay date', () => {
@@ -152,13 +158,18 @@ describe('WEATHER_PRESETS', () => {
     expect(WEATHER_PRESETS.heavy.precipitation).toBeGreaterThan(WEATHER_PRESETS.light.precipitation);
   });
 
-  it('each preset has label, temperature, precipitation, windspeed', () => {
-    Object.values(WEATHER_PRESETS).forEach(p => {
+  it('each what-if preset has label, temperature, precipitation, windspeed', () => {
+    Object.values(WEATHER_PRESETS).filter(p => !p.actual).forEach(p => {
       expect(p.label).toBeDefined();
       expect(typeof p.temperature).toBe('number');
       expect(typeof p.precipitation).toBe('number');
       expect(typeof p.windspeed).toBe('number');
     });
+  });
+
+  it('has an actual option that sends no weather', () => {
+    expect(WEATHER_PRESETS.actual.label).toBe('Actual');
+    expect(WEATHER_PRESETS.actual.temperature).toBeUndefined();
   });
 });
 

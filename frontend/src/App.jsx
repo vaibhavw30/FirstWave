@@ -15,7 +15,7 @@ import { buildQueryParams } from './utils/queryParams';
 const DEFAULT_CONTROLS = {
   date: '2025-10-10',
   hour: 20,
-  weather: 'none',
+  weather: 'actual',
   ambulances: 5,
 };
 
@@ -48,7 +48,7 @@ export default function App() {
     const next = {
       date: scenario.date,
       hour: scenario.hour,
-      weather: scenario.precipitation > 5 ? 'heavy' : scenario.precipitation > 0 ? 'light' : 'none',
+      weather: scenario.weather,
       ambulances: scenario.ambulances,
     };
     setControls(next);
