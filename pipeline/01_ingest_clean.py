@@ -2,36 +2,40 @@
 Script 01 — Ingest & Clean
 FirstWave | GT Hacklytics 2026
 
-Input:  EMS CSV file (path passed via --csv argument)
+Input:  raw EMS CSV (--csv)
         Download: https://data.cityofnewyork.us/api/views/76xm-jjuj/rows.csv?accessType=DOWNLOAD
-Output: pipeline/data/incidents_cleaned.parquet (~7.1M rows)
+Output: $FW_PIPELINE_DATA/incidents_cleaned.parquet (default pipeline/data)
+        one row per incident, 2021-12-01 → 2026-06-30, with a split column.
+
+The demand label counts every incident that passes the zone/borough/indicator
+filters. Response-time validity is NOT a filter here — it is the
+is_valid_response column, used only for response-time averages (zone_stats, 08).
 
 Run: python pipeline/01_ingest_clean.py --csv /path/to/ems_raw.csv
 """
 
 import argparse
+import datetime as dt
+import os
 import pathlib
 import sys
+
 import duckdb
 
+from fw_config import DATA_END, DATA_START, VALID_ZONES, split_case_sql
+from fw_ingest import missing_columns, pick_id_column
+
 # ── Paths ──────────────────────────────────────────────────────────────────────
-PIPELINE_DATA = pathlib.Path("pipeline/data")
+PIPELINE_DATA = pathlib.Path(os.getenv("FW_PIPELINE_DATA", "pipeline/data"))
 PIPELINE_DATA.mkdir(parents=True, exist_ok=True)
 OUT_PARQUET = PIPELINE_DATA / "incidents_cleaned.parquet"
 
-# ── Constants ──────────────────────────────────────────────────────────────────
-VALID_ZONES = [
-    'B1','B2','B3','B4','B5',
-    'K1','K2','K3','K4','K5','K6','K7',
-    'M1','M2','M3','M4','M5','M6','M7','M8','M9',
-    'Q1','Q2','Q3','Q4','Q5','Q6','Q7',
-    'S1','S2','S3',
-]
 VALID_ZONES_SQL = ", ".join(f"'{z}'" for z in VALID_ZONES)
+WINDOW_END = DATA_END + dt.timedelta(days=1)
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
 parser = argparse.ArgumentParser()
-parser.add_argument("--csv", required=True, help="Path to raw EMS CSV (~28.7M rows)")
+parser.add_argument("--csv", required=True, help="Path to raw EMS CSV")
 args = parser.parse_args()
 
 csv_path = pathlib.Path(args.csv).resolve()
@@ -39,152 +43,104 @@ if not csv_path.exists():
     print(f"ERROR: CSV not found at {csv_path}", file=sys.stderr)
     sys.exit(1)
 
-print(f"Reading raw CSV: {csv_path}")
-print("This will take 5-10 minutes for 28.7M rows via DuckDB...")
-
-# ── DuckDB ingest + filter ─────────────────────────────────────────────────────
 conn = duckdb.connect()
+# all_varchar: no type sniffing, so a mis-typed sample can't silently drop rows.
+SRC = f"read_csv('{csv_path}', header=true, all_varchar=true, ignore_errors=true)"
 
-# Count raw rows first
-raw_count = conn.execute(
-    f"SELECT COUNT(*) FROM read_csv_auto('{csv_path}', ignore_errors=true)"
-).fetchone()[0]
-print(f"Raw row count: {raw_count:,}")
+columns = [d[0] for d in conn.execute(f"SELECT * FROM {SRC} LIMIT 0").description]
+missing = missing_columns(columns)
+if missing:
+    print(f"ERROR: raw CSV is missing columns: {missing}", file=sys.stderr)
+    print(f"       Found: {columns}", file=sys.stderr)
+    sys.exit(1)
+id_col = pick_id_column(columns)
 
-# DuckDB dayofweek(): 0=Sun...6=Sat
-# Use (dayofweek + 6) % 7 to get 0=Mon, 6=Sun (same convention as CLAUDE.md)
+raw_count = conn.execute(f"SELECT COUNT(*) FROM {SRC}").fetchone()[0]
+print(f"Reading raw CSV: {csv_path}")
+print(f"Raw row count: {raw_count:,}   (ID column: {id_col})")
+
+INCIDENT_DT = (
+    "COALESCE(TRY_CAST(INCIDENT_DATETIME AS TIMESTAMP), "
+    "try_strptime(INCIDENT_DATETIME, '%m/%d/%Y %I:%M:%S %p'))"
+)
+
+# dow: DuckDB 0=Sun..6=Sat -> (dow + 6) % 7 gives 0=Mon..6=Sun
 conn.execute(f"""
 COPY (
+    WITH src AS (
+        SELECT *, {INCIDENT_DT} AS incident_dt FROM {SRC}
+    )
     SELECT
-        -- parse datetime
-        INCIDENT_DATETIME AS incident_dt,
-
-        -- source columns kept for downstream use
-        CAD_INCIDENT_ID,
+        incident_dt,
+        {id_col}                                                 AS INCIDENT_ID,
         INCIDENT_DISPATCH_AREA,
         BOROUGH,
-        INCIDENT_RESPONSE_SECONDS_QY::DOUBLE  AS INCIDENT_RESPONSE_SECONDS_QY,
-        INCIDENT_TRAVEL_TM_SECONDS_QY::DOUBLE AS INCIDENT_TRAVEL_TM_SECONDS_QY,
-        DISPATCH_RESPONSE_SECONDS_QY::DOUBLE  AS DISPATCH_RESPONSE_SECONDS_QY,
-        FINAL_SEVERITY_LEVEL_CODE::INTEGER    AS FINAL_SEVERITY_LEVEL_CODE,
+        TRY_CAST(INCIDENT_RESPONSE_SECONDS_QY  AS DOUBLE)        AS INCIDENT_RESPONSE_SECONDS_QY,
+        TRY_CAST(INCIDENT_TRAVEL_TM_SECONDS_QY AS DOUBLE)        AS INCIDENT_TRAVEL_TM_SECONDS_QY,
+        TRY_CAST(DISPATCH_RESPONSE_SECONDS_QY  AS DOUBLE)        AS DISPATCH_RESPONSE_SECONDS_QY,
+        TRY_CAST(FINAL_SEVERITY_LEVEL_CODE     AS INTEGER)       AS FINAL_SEVERITY_LEVEL_CODE,
         HELD_INDICATOR,
 
-        -- time features
-        EXTRACT(year  FROM INCIDENT_DATETIME)::INTEGER AS year,
-        EXTRACT(month FROM INCIDENT_DATETIME)::INTEGER AS month,
-        (EXTRACT(dow  FROM INCIDENT_DATETIME)::INTEGER + 6) % 7 AS dayofweek,
-        EXTRACT(hour  FROM INCIDENT_DATETIME)::INTEGER AS hour,
-        date_trunc('hour', INCIDENT_DATETIME)          AS date_hour,
-        CAST(INCIDENT_DATETIME AS DATE)                AS incident_date,
+        EXTRACT(year  FROM incident_dt)::INTEGER                 AS year,
+        EXTRACT(month FROM incident_dt)::INTEGER                 AS month,
+        (EXTRACT(dow  FROM incident_dt)::INTEGER + 6) % 7        AS dayofweek,
+        EXTRACT(hour  FROM incident_dt)::INTEGER                 AS hour,
+        date_trunc('hour', incident_dt)                          AS date_hour,
+        CAST(incident_dt AS DATE)                                AS incident_date,
 
-        -- derived flags
-        CASE WHEN (EXTRACT(dow FROM INCIDENT_DATETIME)::INTEGER + 6) % 7 IN (5,6)
-             THEN 1 ELSE 0 END AS is_weekend,
-        CASE WHEN FINAL_SEVERITY_LEVEL_CODE::INTEGER IN (1,2) THEN 1 ELSE 0 END AS is_high_acuity,
-        CASE WHEN HELD_INDICATOR = 'Y' THEN 1 ELSE 0 END AS is_held,
-        CASE WHEN EXTRACT(year FROM INCIDENT_DATETIME) = 2020
-             THEN 1 ELSE 0 END AS is_covid_year,
+        CASE WHEN (EXTRACT(dow FROM incident_dt)::INTEGER + 6) % 7 IN (5, 6)
+             THEN 1 ELSE 0 END                                   AS is_weekend,
+        CASE WHEN TRY_CAST(FINAL_SEVERITY_LEVEL_CODE AS INTEGER) IN (1, 2)
+             THEN 1 ELSE 0 END                                   AS is_high_acuity,
+        CASE WHEN HELD_INDICATOR = 'Y' THEN 1 ELSE 0 END         AS is_held,
+        CASE WHEN VALID_INCIDENT_RSPNS_TIME_INDC = 'Y'
+              AND VALID_DISPATCH_RSPNS_TIME_INDC = 'Y'
+              AND TRY_CAST(INCIDENT_RESPONSE_SECONDS_QY AS DOUBLE) BETWEEN 1 AND 7200
+             THEN 1 ELSE 0 END                                   AS is_valid_response,
 
-        -- train/test/exclude split
-        CASE
-            WHEN EXTRACT(year FROM INCIDENT_DATETIME) = 2023 THEN 'test'
-            WHEN EXTRACT(year FROM INCIDENT_DATETIME) = 2020 THEN 'exclude'
-            WHEN EXTRACT(year FROM INCIDENT_DATETIME)
-                 BETWEEN 2019 AND 2022                                                          THEN 'train'
-            ELSE 'exclude'
-        END AS split
+        {split_case_sql('incident_dt')}                          AS split
 
-    FROM read_csv_auto('{csv_path}', ignore_errors=true)
-
-    WHERE
-        -- quality flags
-        VALID_INCIDENT_RSPNS_TIME_INDC = 'Y'
-        AND VALID_DISPATCH_RSPNS_TIME_INDC = 'Y'
-        AND REOPEN_INDICATOR   = 'N'
-        AND TRANSFER_INDICATOR = 'N'
-        AND STANDBY_INDICATOR  = 'N'
-        -- response time range
-        AND TRY_CAST(INCIDENT_RESPONSE_SECONDS_QY AS DOUBLE) BETWEEN 1 AND 7200
-        -- valid borough
-        AND BOROUGH IS NOT NULL
-        AND BOROUGH != 'UNKNOWN'
-        -- valid dispatch zone
-        AND INCIDENT_DISPATCH_AREA IN ({VALID_ZONES_SQL})
-        -- zone-borough prefix must match
-        AND (
-               (BOROUGH = 'BRONX'              AND INCIDENT_DISPATCH_AREA LIKE 'B%')
-            OR (BOROUGH = 'BROOKLYN'           AND INCIDENT_DISPATCH_AREA LIKE 'K%')
-            OR (BOROUGH = 'MANHATTAN'          AND INCIDENT_DISPATCH_AREA LIKE 'M%')
-            OR (BOROUGH = 'QUEENS'             AND INCIDENT_DISPATCH_AREA LIKE 'Q%')
-            OR (BOROUGH LIKE '%STATEN%'        AND INCIDENT_DISPATCH_AREA LIKE 'S%')
-        )
-        -- datetime must parse successfully
-        AND INCIDENT_DATETIME IS NOT NULL
-
+    FROM src
+    WHERE incident_dt >= TIMESTAMP '{DATA_START} 00:00:00'
+      AND incident_dt <  TIMESTAMP '{WINDOW_END} 00:00:00'
+      AND REOPEN_INDICATOR   = 'N'
+      AND TRANSFER_INDICATOR = 'N'
+      AND STANDBY_INDICATOR  = 'N'
+      AND BOROUGH IS NOT NULL
+      AND BOROUGH != 'UNKNOWN'
+      AND INCIDENT_DISPATCH_AREA IN ({VALID_ZONES_SQL})
+      AND (
+             (BOROUGH = 'BRONX'       AND INCIDENT_DISPATCH_AREA LIKE 'B%')
+          OR (BOROUGH = 'BROOKLYN'    AND INCIDENT_DISPATCH_AREA LIKE 'K%')
+          OR (BOROUGH = 'MANHATTAN'   AND INCIDENT_DISPATCH_AREA LIKE 'M%')
+          OR (BOROUGH = 'QUEENS'      AND INCIDENT_DISPATCH_AREA LIKE 'Q%')
+          OR (BOROUGH LIKE '%STATEN%' AND INCIDENT_DISPATCH_AREA LIKE 'S%')
+      )
 ) TO '{OUT_PARQUET}' (FORMAT PARQUET, COMPRESSION SNAPPY)
 """)
 
 print(f"\nParquet written: {OUT_PARQUET}")
 
 # ── Validation ─────────────────────────────────────────────────────────────────
-stats = conn.execute(f"""
-    SELECT
-        COUNT(*)                                              AS total,
-        SUM(CASE WHEN split = 'train'   THEN 1 ELSE 0 END)  AS train_rows,
-        SUM(CASE WHEN split = 'test'    THEN 1 ELSE 0 END)  AS test_rows,
-        SUM(CASE WHEN split = 'exclude' THEN 1 ELSE 0 END)  AS excl_rows,
-        COUNT(DISTINCT INCIDENT_DISPATCH_AREA)               AS distinct_zones
+summary = conn.execute(f"""
+    SELECT split, year, COUNT(*) AS incidents,
+           ROUND(AVG(is_valid_response) * 100, 1) AS pct_valid_response
     FROM read_parquet('{OUT_PARQUET}')
-""").fetchone()
-
-total, train, test, excl, zones = stats
+    GROUP BY split, year ORDER BY year, split
+""").fetchdf()
+zones = conn.execute(
+    f"SELECT COUNT(DISTINCT INCIDENT_DISPATCH_AREA) FROM read_parquet('{OUT_PARQUET}')"
+).fetchone()[0]
 
 print()
-print("=" * 55)
+print("=" * 60)
 print("  SCRIPT 01 — VALIDATION")
-print("=" * 55)
-print(f"  Total after filters:    {total:>10,}")
-print(f"  Training (2019,21,22):  {train:>10,}   <- expect ~5.6M")
-print(f"  Holdout  (2023):        {test:>10,}   <- expect ~1.5M")
-print(f"  Excluded (2020+other):  {excl:>10,}")
-print(f"  Distinct zones:         {zones:>10}   <- expect 31")
-print()
-
-if train < 3_000_000:
-    print("  WARNING: Training rows < 3M -- datetime parse may have failed!")
-    print("  Check: inspect a few INCIDENT_DATETIME values for format variations")
-else:
-    print("  OK: Training row count looks good")
-
-if test < 1_000_000:
-    print("  WARNING: Test rows < 1M -- check year filter")
-else:
-    print("  OK: Test row count looks good")
-
+print("=" * 60)
+print(summary.to_string(index=False))
+print(f"\n  Distinct zones: {zones}   <- expect 31")
+print("  Expect ~1.5M+ incidents per full year and pct_valid_response")
+print("  falling over time (~97% in 2022 to ~89% in mid-2026).")
 if zones != 31:
-    print(f"  WARNING: Expected 31 zones, found {zones}")
-else:
-    print("  OK: Exactly 31 dispatch zones")
-
-# Zone distribution
-print("\n  Zone distribution (top 10 by volume):")
-zone_dist = conn.execute(f"""
-    SELECT INCIDENT_DISPATCH_AREA, COUNT(*) AS cnt
-    FROM read_parquet('{OUT_PARQUET}')
-    GROUP BY 1 ORDER BY 2 DESC LIMIT 10
-""").fetchdf()
-print(zone_dist.to_string(index=False))
-
-# Borough distribution
-print("\n  Borough distribution:")
-boro_dist = conn.execute(f"""
-    SELECT BOROUGH, COUNT(*) AS cnt
-    FROM read_parquet('{OUT_PARQUET}')
-    GROUP BY 1 ORDER BY 2 DESC
-""").fetchdf()
-print(boro_dist.to_string(index=False))
-
-print()
-print("=" * 55)
+    print(f"  WARNING: expected 31 zones, found {zones}")
+print("=" * 60)
 print("  Next: python pipeline/02_weather_merge.py")
-print("=" * 55)
