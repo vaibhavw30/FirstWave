@@ -91,7 +91,7 @@ COPY (
            w.temperature_2m, w.precipitation, w.windspeed_10m,
            w.is_severe_weather, w.is_extreme_heat, w.is_heat_emergency,
            c.is_holiday, c.is_school_day, c.is_major_event,
-           0.5 AS subway_disruption_idx,
+           0.5::DOUBLE AS subway_disruption_idx,
            {split_case_sql('t.date_hour')} AS split
     FROM t
     LEFT JOIN read_parquet('{WEATHER}') w ON w.date_hour = t.date_hour

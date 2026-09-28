@@ -4,11 +4,13 @@ data window. Incidents follow a zone-level day-to-day random walk so lags carry
 signal.
 """
 import datetime as dt
+import json
 import os
 import pathlib
 import subprocess
 import sys
 
+import joblib
 import numpy as np
 import pandas as pd
 import pytest
@@ -85,6 +87,10 @@ def test_04_outputs(run_dirs):
         "train": 746_976, "test": 271_560, "test_recent": 134_664,
         "valid": 68_448, "history": 2_232}
     assert grid.drop(columns=["split"]).isna().sum().sum() == 0
+    non_numeric = [c for c in grid.columns
+                   if c not in ("INCIDENT_DISPATCH_AREA", "split", "date_hour", "date")
+                   and not pd.api.types.is_numeric_dtype(grid[c])]
+    assert non_numeric == []
     assert len(pd.read_parquet(art_dir / "zone_baselines.parquet")) == 5_208
     assert len(pd.read_parquet(art_dir / "zone_stats.parquet")) == 31
     hc = pd.read_parquet(art_dir / "hourly_counts.parquet")
@@ -92,3 +98,25 @@ def test_04_outputs(run_dirs):
     assert hc["date_hour"].min() == pd.Timestamp("2024-12-01 00:00")
     assert hc["date_hour"].max() == pd.Timestamp("2026-06-30 23:00")
     assert len(pd.read_parquet(art_dir / "calendar_daily.parquet")) == 2_730
+
+
+def test_05_trains_and_reports(run_dirs):
+    data_dir, art_dir, env = run_dirs
+    r = subprocess.run([sys.executable, "pipeline/05_train_demand_model.py", "--max-trees", "40"],
+                       cwd=REPO, env=env, capture_output=True, text=True)
+    assert r.returncode in (0, 1), r.stdout[-4000:] + r.stderr[-4000:]
+    if r.returncode == 0:
+        metrics = json.loads((art_dir / "model_metrics.json").read_text())
+        model = joblib.load(art_dir / "demand_model.pkl")
+        assert list(model.feature_names_in_) == metrics["feature_cols"]
+        assert len(metrics["feature_cols"]) == 28
+        assert metrics["gate"]["passed"] is True
+    else:
+        metrics = json.loads((data_dir / "model_metrics_candidate.json").read_text())
+        assert (data_dir / "demand_model_candidate.pkl").exists()
+        assert not (art_dir / "demand_model.pkl").exists()
+        assert metrics["gate"]["passed"] is False
+    assert set(metrics["test"]) == {"lag", "no_lag", "naive_168h", "baseline_avg"}
+    assert set(metrics["test"]["lag"]) == {"rmse", "mae", "poisson_deviance"}
+    assert len(metrics["test_rmse_by_hour"]["lag"]) == 24
+    assert metrics["objective"] in ("reg:squarederror", "count:poisson")
