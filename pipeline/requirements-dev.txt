@@ -8,3 +8,4 @@ joblib==1.5.3
 pyarrow==23.0.1
 requests>=2.31.0
 pytest>=8.0
+matplotlib>=3.8   # pipeline/shap_importance.py chart only
