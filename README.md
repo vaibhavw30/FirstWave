@@ -61,12 +61,12 @@ Staten Island gets worse (62.7% → 42.0%) because 10 demand-weighted points rar
 ## Features
 
 ### Demand Heatmap + Historical Replay
-A live choropleth map colors all 31 NYC dispatch zones by predicted calls per hour: teal (low) through yellow/orange to red (critical). Pick any date from 2025-01-01 to 2026-06-30 and an hour. The model forecasts that hour from the real call history leading up to it, and the zone detail panel shows how many calls actually came in.
+A live map shades all 31 NYC dispatch zones by predicted calls per hour, relative to the busiest zone that hour: teal (low) through yellow/orange to red (the hour's peak). Pick any date from 2025-01-01 to 2026-06-30 and an hour. The model forecasts that hour from the real call history leading up to it, and the zone detail panel shows how many calls actually came in.
 
 Weather defaults to **Actual**, the replayed hour's recorded weather. Clear, Light Rain, and Heavy Storm override it for a what-if. The forecast updates as you change date, hour, weather, or ambulance count.
 
 ### Watch the Wave ▶
-Hit the play button next to the hour slider and watch the selected day's demand animate hour by hour at 1.5-second intervals. The contrast between a calm Monday 4AM and a red Friday 8PM is the core argument: demand is predictable, so staging should be proactive.
+Hit the play button next to the hour slider and watch the selected day's demand animate hour by hour at 1.5-second intervals. Hotspots shift through the day and total demand swings more than 2× (95 predicted calls citywide on Monday 4AM vs 220 on Friday 8PM). That's the core argument: demand is predictable, so staging should be proactive.
 
 ### Borough-Fair Staging Optimizer
 A two-phase weighted K-Means algorithm places K ambulances at the mathematical center of predicted demand:
@@ -378,7 +378,7 @@ Each preset replays a real 2025 hour with its recorded weather.
 | Preset | Replayed hour | Ambulances | What it shows |
 |---|---|---|---|
 | **Fri 8PM Peak** | Fri 2025-10-10, 20:00 | 5 | Bronx and Brooklyn go red, and staging points cluster around the high-demand zones. This is the pitch. |
-| **Mon 4AM Quiet** | Mon 2025-10-20, 04:00 | 5 | The map goes calm across all boroughs. The contrast with Friday shows that demand is predictable. |
+| **Mon 4AM Quiet** | Mon 2025-10-20, 04:00 | 5 | Citywide demand falls to 95 predicted calls/hour, vs 220 on Friday 8PM. The shading is relative to the hour's busiest zone, so compare the totals, not the colors. |
 | **Storm** | Wed 2025-07-30, 18:00 | 7 | The rainiest Wednesday 6 PM of 2025 (8.2 mm/h, heavy rain). Weather feeds both the forecast and the counterfactual's travel times. |
 
 ---
