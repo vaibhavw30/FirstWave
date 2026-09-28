@@ -1,6 +1,10 @@
+import math
+
 import numpy as np
 import pandas as pd
-import math
+
+from models.lag_features import LAG_FEATURES, build_lag_features
+from models.replay import calendar_flags
 
 VALID_ZONES = [
     'B1', 'B2', 'B3', 'B4', 'B5',
@@ -58,14 +62,23 @@ FEATURE_COLS = [
     "subway_disruption_idx",
 ]
 
+FEATURE_COLS_WITH_LAGS = FEATURE_COLS + LAG_FEATURES
+
 SEVERE_WEATHER_CODES = {51, 53, 55, 61, 63, 65, 71, 73, 75, 77, 80, 81, 82, 85, 86, 95, 96, 99}
+
+
+class LagArtifactMissing(RuntimeError):
+    """The model expects lag features but no replay date / hourly counts were given."""
 
 
 class DemandForecaster:
     def __init__(self, model):
         self.model = model
+        names = getattr(model, "feature_names_in_", None)
+        self.feature_names = [str(n) for n in names] if names is not None else list(FEATURE_COLS)
+        self.uses_lags = any(name in LAG_FEATURES for name in self.feature_names)
 
-    def predict_all_zones(
+    def build_feature_frame(
         self,
         hour: int,
         dow: int,
@@ -75,11 +88,11 @@ class DemandForecaster:
         windspeed: float,
         zone_stats_df,
         baselines_df,
-    ) -> dict:
-        """
-        Build a 31-row feature DataFrame for all zones and run a single batch predict.
-        Returns dict {zone_code: predicted_count}.
-        """
+        replay_date=None,
+        counts_wide=None,
+        calendar=None,
+    ) -> pd.DataFrame:
+        """31-row feature frame indexed by zone."""
         hour_sin = math.sin(2 * math.pi * hour / 24)
         hour_cos = math.cos(2 * math.pi * hour / 24)
         dow_sin = math.sin(2 * math.pi * dow / 7)
@@ -129,17 +142,38 @@ class DemandForecaster:
                 "zone_baseline_avg": baseline,
                 "high_acuity_ratio": high_acuity,
                 "held_ratio": held,
-                "is_holiday":            0,
-                "is_major_event":        0,
-                "is_school_day":         1,
-                "is_heat_emergency":     int(temperature >= 35.0),
-                "is_extreme_heat":       int(temperature >= 35.0),
+                **calendar_flags(calendar, replay_date, zone[0]),
+                "is_heat_emergency": int(temperature >= 35.0),
+                "is_extreme_heat": int(temperature >= 35.0),
                 "subway_disruption_idx": 0.5,
             })
 
-        df = pd.DataFrame(rows)
-        features = df[FEATURE_COLS]
-        preds = self.model.predict(features)
-        preds = np.clip(preds, 0, None)
+        df = pd.DataFrame(rows).set_index("zone")
+        if self.uses_lags:
+            if replay_date is None or counts_wide is None:
+                raise LagArtifactMissing("model expects lag features: pass replay_date and counts_wide")
+            target = pd.Timestamp(replay_date) + pd.Timedelta(hours=hour)
+            df = df.join(build_lag_features(counts_wide, target).reindex(VALID_ZONES))
+        return df
 
-        return {row["zone"]: float(pred) for row, pred in zip(rows, preds)}
+    def predict_all_zones(
+        self,
+        hour: int,
+        dow: int,
+        month: int,
+        temperature: float,
+        precipitation: float,
+        windspeed: float,
+        zone_stats_df,
+        baselines_df,
+        replay_date=None,
+        counts_wide=None,
+        calendar=None,
+    ) -> dict:
+        """Returns {zone_code: predicted_count}."""
+        df = self.build_feature_frame(
+            hour, dow, month, temperature, precipitation, windspeed,
+            zone_stats_df, baselines_df, replay_date, counts_wide, calendar,
+        )
+        preds = np.clip(self.model.predict(df[self.feature_names]), 0, None)
+        return {zone: float(p) for zone, p in zip(df.index, preds)}
