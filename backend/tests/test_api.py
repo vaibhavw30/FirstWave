@@ -1,5 +1,7 @@
 import datetime as dt
 import os
+import pathlib
+import shutil
 
 import joblib
 import numpy as np
@@ -8,7 +10,11 @@ import pytest
 import xgboost as xgb
 
 from fixtures_data import synthetic_count, synthetic_hourly_counts
+from models.coverage_model import weather_travel_factor
 from models.demand_forecaster import FEATURE_COLS, FEATURE_COLS_WITH_LAGS, VALID_ZONES
+from models.staging_optimizer import ZONE_CENTROIDS
+
+REAL_ARTIFACTS = pathlib.Path(__file__).resolve().parents[1] / "artifacts"
 
 
 def tiny_model(features):
@@ -20,6 +26,7 @@ def tiny_model(features):
 
 
 def _write_artifacts(art):
+    shutil.copy(REAL_ARTIFACTS / "drive_time_matrix.pkl", art / "drive_time_matrix.pkl")
     joblib.dump(tiny_model(FEATURE_COLS_WITH_LAGS), art / "demand_model.pkl")
     pd.DataFrame([
         {"INCIDENT_DISPATCH_AREA": z, "hour": h, "dayofweek": d, "zone_baseline_avg": 2.0}
@@ -237,3 +244,71 @@ def test_reload_clears_counterfactual_cache(api):
     assert _compute_dynamic_counterfactual.cache_info().currsize > 0
     assert client.post("/reload").status_code == 200
     assert _compute_dynamic_counterfactual.cache_info().currsize == 0
+
+
+def _staging_sites(body):
+    by_coords = {v: k for k, v in ZONE_CENTROIDS.items()}
+    return [by_coords[tuple(f["geometry"]["coordinates"])] for f in body["features"]]
+
+
+def test_health_reports_coverage_model(api):
+    client, _ = api
+    assert client.get("/health").json()["artifacts"]["coverage_model"] is True
+
+
+def test_staging_pins_are_optimizer_sites(api):
+    client, _ = api
+    body = client.get("/api/staging", params={
+        "hour": 20, "dow": 4, "month": 10, "date": "2025-10-10", "ambulances": 5}).json()
+    sites = _staging_sites(body)            # KeyError if a pin is not on a zone centroid
+    assert {s[0] for s in sites} == set("BKMQS")
+    served = [z for f in body["features"] for z in f["properties"]["cluster_zones"]]
+    assert len(served) == len(set(served))
+
+
+@pytest.mark.parametrize("weather", [
+    pytest.param({}, id="actual"),          # fixture weather: 0 mm, 7 km/h -> wf 1.0
+    pytest.param({"temperature": 5, "precipitation": 12, "windspeed": 40}, id="what-if"),
+])
+def test_counterfactual_uses_the_staging_sites_and_coverage_model(api, weather):
+    client, main = api
+    from routers.counterfactual import _compute_dynamic_counterfactual
+    _compute_dynamic_counterfactual.cache_clear()
+    params = {"hour": 20, "dow": 4, "month": 10, "date": "2025-10-10", "ambulances": 5, **weather}
+    sites = _staging_sites(client.get("/api/staging", params=params).json())
+    r = client.get("/api/counterfactual", params=params)
+    assert r.headers["X-Data-Source"] == "dynamic"
+    wf = weather_travel_factor(weather.get("precipitation", 0.0), weather.get("windspeed", 7.0))
+    expected = main.ARTIFACTS["coverage_model"].zone_times(sites, weather_factor=wf)
+    by_zone = r.json()["by_zone"]
+    for zone, (before, after) in expected.items():
+        assert by_zone[zone]["static_time"] == pytest.approx(round(before, 1))
+        assert by_zone[zone]["staged_time"] == pytest.approx(round(after, 1))
+        assert by_zone[zone]["staged_time"] <= by_zone[zone]["static_time"]
+
+
+def test_missing_coverage_model_serves_mock(api):
+    client, main = api
+    from routers.counterfactual import _compute_dynamic_counterfactual
+    from routers.staging import _cached_heatmap_and_staging
+    saved = main.ARTIFACTS["coverage_model"]
+    main.ARTIFACTS["coverage_model"] = None
+    _cached_heatmap_and_staging.cache_clear()
+    _compute_dynamic_counterfactual.cache_clear()
+    try:
+        params = {"hour": 21, "dow": 4, "month": 10, "date": "2025-10-10"}
+        r = client.get("/api/staging", params=params)
+        assert r.headers["X-Data-Source"] == "mock"
+        assert r.headers["X-Warning"] == "coverage-model-missing"
+        r = client.get("/api/counterfactual", params=params)
+        assert r.headers["X-Data-Source"] == "mock"
+    finally:
+        main.ARTIFACTS["coverage_model"] = saved
+
+
+def test_reload_rebuilds_coverage_model(api):
+    client, main = api
+    main.ARTIFACTS["coverage_model"] = None
+    body = client.post("/reload").json()
+    assert body["artifacts"]["coverage_model"] is True
+    assert main.ARTIFACTS["coverage_model"] is not None

@@ -24,6 +24,7 @@ def _cached_heatmap_and_staging(
     Cleared by POST /reload.
     """
     from main import ARTIFACTS
+    from models.coverage_model import weather_travel_factor
     from models.demand_forecaster import DemandForecaster
     from models.staging_optimizer import StagingOptimizer
 
@@ -39,9 +40,11 @@ def _cached_heatmap_and_staging(
         weather_flags=dict(weather_flags) if weather_flags else None,
     )
 
-    optimizer = StagingOptimizer()
-    staging_points = optimizer.compute_staging(predicted_counts, K=ambulances)
-    return staging_points
+    optimizer = StagingOptimizer(ARTIFACTS["coverage_model"])
+    return optimizer.compute_staging(
+        predicted_counts, K=ambulances,
+        weather_factor=weather_travel_factor(precipitation, windspeed),
+    )
 
 
 @router.get("/staging")
@@ -76,6 +79,13 @@ async def get_staging(
         return JSONResponse(
             content=MOCK_DATA["staging"],
             headers={"X-Data-Source": "mock", "X-Warning": "lag-artifact-missing"},
+        )
+
+    if ARTIFACTS.get("coverage_model") is None:
+        logger.warning("Staging: coverage model unavailable (drive-time matrix, stations or zone_stats missing)")
+        return JSONResponse(
+            content=MOCK_DATA["staging"],
+            headers={"X-Data-Source": "mock", "X-Warning": "coverage-model-missing"},
         )
 
     try:

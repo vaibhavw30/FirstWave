@@ -34,6 +34,7 @@ ARTIFACTS: dict = {
     "calendar_daily": None,    # {(date, zone_prefix): flags}
     "model_metrics": None,     # dict from model_metrics.json
     "weather_hourly": None,    # {hour Timestamp: real weather + flags} for replay
+    "coverage_model": None,    # CoverageModel built from drive_time + stations + zone_stats
 }
 
 MOCK_DATA: dict = {}
@@ -110,6 +111,13 @@ def load_all_artifacts():
             logger.info("✓  breakdown cache built (%d boroughs)", len(BREAKDOWN_CACHE))
         except Exception as exc:
             logger.error("⚠  breakdown cache failed: %s", exc)
+
+    from models.coverage_model import build_coverage_model
+    ARTIFACTS["coverage_model"] = build_coverage_model(ARTIFACTS["drive_time"], ARTIFACTS["zone_stats"])
+    if ARTIFACTS["coverage_model"] is not None:
+        logger.info("✓  coverage model built (%d zones)", len(ARTIFACTS["coverage_model"].zones))
+    else:
+        logger.warning("⚠  coverage model unavailable — staging serves mock")
 
 
 def _load_mock_data():
@@ -207,6 +215,7 @@ def _artifact_status() -> dict:
         "hourly_counts": ARTIFACTS["hourly_counts"] is not None,
         "calendar_daily": ARTIFACTS["calendar_daily"] is not None,
         "weather_hourly": ARTIFACTS["weather_hourly"] is not None,
+        "coverage_model": ARTIFACTS["coverage_model"] is not None,
     }
 
 
