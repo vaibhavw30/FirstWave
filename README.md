@@ -36,26 +36,37 @@ Emergency demand is highly predictable — Friday evenings in the Bronx, summer 
 
 ## Key Results
 
-Computed from **28.7 million validated NYC EMS incidents (2019–2023)**:
+Simulated on **25,200 Priority 1–2 calls from 2025**, a year the model never trained on (up to 150 calls for each of the 168 hour-of-week slots):
 
 | Metric | Without FirstWave | With FirstWave |
 |---|---|---|
-| Incidents within 8-min clinical window | 64.7% | **86.0%** |
-| Median response time saved | — | **3 min 19 sec** |
-| Bronx coverage (worst borough) | 48.2% | **96.7%** |
-| SVI Q4 (most vulnerable) savings | — | **299 seconds** |
+| Calls reached within 8 minutes | 57.8% | **87.8%** |
+| Median response time saved | — | **4 min 16 sec** |
+| Bronx (worst borough) within 8 minutes | 49.9% | **97.0%** |
+| Most vulnerable neighborhoods (SVI Q4), median saved | — | **349 seconds** |
 
-The equity finding matters: FirstWave disproportionately benefits the city's most vulnerable neighborhoods because high-vulnerability zones overlap with highest-demand zones where staged ambulances are placed.
+The equity finding: the most vulnerable quartile saves the most, a median of 349 s vs 192 s in the least vulnerable quartile. High-vulnerability zones overlap with the highest-demand zones, which is where staged units go.
+
+**How to read these numbers.** "Without" is each call's real recorded response time (dispatch plus travel). "With" is the road-network drive time from the nearest of 10 staging points placed from that hour's forecast.
+
+It's an upper bound on what placement alone could buy:
+- It assumes the staged units are always free.
+- It leaves out dispatch delay.
+- It scores a call inside a staging zone at 0 s drive time. That's 36% of calls; excluding them, 80.8% are reached within 8 minutes.
+
+Staten Island gets worse (62.7% → 42.0%) because 10 demand-weighted points rarely land there. Method: `pipeline/08_counterfactual_precompute.py`.
 
 ---
 
 ## Features
 
-### Demand Heatmap
-A live choropleth map colors all 31 NYC dispatch zones by predicted incident intensity — teal (low) through yellow/orange to red (critical). The forecast updates in real time as you change hour, day, weather, or ambulance count.
+### Demand Heatmap + Historical Replay
+A live map shades all 31 NYC dispatch zones by predicted calls per hour, relative to the busiest zone that hour: teal (low) through yellow/orange to red (the hour's peak). Pick any date from 2025-01-01 to 2026-06-30 and an hour. The model forecasts that hour from the real call history leading up to it, and the zone detail panel shows how many calls actually came in.
+
+Weather defaults to **Actual**, the replayed hour's recorded weather. Clear, Light Rain, and Heavy Storm override it for a what-if. The forecast updates as you change date, hour, weather, or ambulance count.
 
 ### Watch the Wave ▶
-Hit the play button next to the hour slider and watch demand animate across 24 hours at 1.5-second intervals. The visual transition from a calm Monday 4AM to a red Friday 8PM is the core argument: demand is predictable, and staging should be proactive.
+Hit the play button next to the hour slider and watch the selected day's demand animate hour by hour at 1.5-second intervals. Hotspots shift through the day and total demand swings more than 2× (95 predicted calls citywide on Monday 4AM vs 220 on Friday 8PM). That's the core argument: demand is predictable, so staging should be proactive.
 
 ### Borough-Fair Staging Optimizer
 A two-phase weighted K-Means algorithm places K ambulances at the mathematical center of predicted demand:
@@ -64,42 +75,51 @@ A two-phase weighted K-Means algorithm places K ambulances at the mathematical c
 - Each staging location covers a ~3,500m radius (8-minute urban drive at 25 km/h)
 
 ### Counterfactual Impact Engine
-Compares actual historical response times against simulated drive times from staged locations, weather-adjusted with a travel factor of `1.0 + 0.012 × precip + 0.002 × max(0, wind − 15)`. Gives an honest, data-backed answer to: *how much faster would we have gotten there?*
+The impact panel answers *how much faster would we have gotten there?* for the selected hour and ambulance count. For each zone:
+- **Before** is the zone's historical average dispatch plus travel time.
+- **After** is the same dispatch time plus the drive from the nearest staging point.
+
+Travel is slowed in bad weather by a factor of `1.0 + 0.012 × precip + 0.002 × max(0, wind − 15)`. The headline [Key Results](#key-results) come from a separate call-by-call simulation (see [Counterfactual Engine](#counterfactual-engine)).
 
 ### AI Dispatcher
 A GPT-4o-mini-powered panel in the top-right corner of the dashboard. Two modes:
 - **Auto-briefing:** Generates a 3-sentence operational summary every time the map updates (1.5s debounce). Tells dispatchers which zone has peak demand, what the coverage improvement is, and one concrete recommendation.
-- **Interactive chat:** Describe any scenario in natural language. "Yankees game Friday night?" — the AI responds and updates the map's hour and day controls automatically. If the map changes, an **↩ Undo** button appears in the chat to revert.
+- **Interactive chat:** Describe any scenario in natural language. "Yankees game Friday night?" The AI responds and sets the hour and weekday for you; the replay date moves to that weekday in the same week. If the map changes, an **↩ Undo** button appears in the chat to revert.
 
 ### Equity / SVI Layer
 A ZIP-level Social Vulnerability Index overlay in a purple gradient (transparent → dark purple for SVI 0→1). The impact panel breaks down response time savings by SVI quartile, proving the algorithm is fair as well as fast.
 
 ### FDNY Stations Overlay
-Toggle on ~31 FDNY EMS station locations as grey markers on the map. Hover for station name, borough, and address. The spatial gap between fixed station locations and where demand actually concentrates is immediately visible.
+Toggle on 30 FDNY EMS station locations as grey markers on the map. Hover for station name, borough, and address. The spatial gap between fixed station locations and where demand actually concentrates is immediately visible.
 
 ### Zone Detail Panel
-Click any zone on the map to open a detail panel with its 24-hour demand curve, historical response time decomposition (dispatch vs. travel), SVI score, before/after response times, and acuity breakdown.
+Click any zone on the map to open a detail panel with its 24-hour demand curve, historical response time decomposition (dispatch vs. travel), SVI score, before/after response times, and acuity breakdown. In replay it also shows predicted vs actual calls for the selected hour.
 
 ---
 
 ## Architecture
 
 ```
-[ 28.7M NYC EMS Incidents (2005–2024) ]
+[ NYC EMS Incident Dispatch Data — 7.2M incidents used, Dec 2021 → Jun 2026 ]
+[ Open-Meteo hourly weather ] [ NYC permitted events ] [ NYC holiday + school calendar ]
          |
          v
-[ DuckDB Pipeline ] — 9 quality filters, weather merge, SVI join
+[ DuckDB Pipeline ] — zone/borough/indicator filters, gap-free zone × hour grid, lag features
          |
-         +-- zone_baselines.parquet     rolling demand avg per (zone, hour, dow)
-         +-- zone_stats.parquet         per-zone historical response stats
          +-- demand_model.pkl           28-feature XGBoost (Poisson) regressor
-         +-- drive_time_matrix.pkl      OSMnx shortest paths, 1,891 zone pairs
-         +-- counterfactual_*.parquet   precomputed impact for 168 (hour × dow) combos
+         +-- model_metrics.json         splits, test metrics, deployment-gate record
+         +-- zone_baselines.parquet     mean calls/hour per (zone, hour, weekday), 2022–2024
+         +-- zone_stats.parquet         per-zone response times, SVI, acuity, held ratio
+         +-- hourly_counts.parquet      real calls per zone-hour (lag features + replay "actual")
+         +-- calendar_daily.parquet     holiday / school-day / major-event flags per day
+         +-- weather_hourly.parquet     real weather for every replayable hour
+         +-- drive_time_matrix.pkl      OSMnx shortest paths, 1,891 origin → zone pairs
+         +-- counterfactual_*.parquet   call-level simulation, 168 (hour × weekday) bins
          |
          v
-[ FastAPI Backend ]  — artifacts loaded at startup, all endpoints < 300ms
-    GET  /api/heatmap           31-zone demand forecast GeoJSON
-    GET  /api/staging           K optimal staging locations GeoJSON
+[ FastAPI Backend ]  — artifacts loaded at startup, hot-reloadable
+    GET  /api/heatmap           31-zone forecast GeoJSON (+ actual calls when replaying a date)
+    GET  /api/staging           K borough-fair staging locations GeoJSON
     GET  /api/counterfactual    coverage + time saved + by_borough + by_svi + by_zone
     GET  /api/historical/:zone  per-zone 24-hour demand + response stats
     GET  /api/breakdown         borough-level performance breakdown
@@ -116,10 +136,12 @@ Click any zone on the map to open a detail panel with its 24-hour demand curve, 
     FDNY stations overlay (grey markers, hover tooltips)
     Equity / SVI ZIP-level overlay (purple gradient)
     AI Dispatcher panel (auto-briefing + interactive chat + undo)
-    Zone detail panel (click any zone)
+    Zone detail panel (click any zone; predicted vs actual in replay)
     Impact metrics panel (coverage bars + histogram + equity chart)
-    Control panel (hour slider, day picker, weather, ambulance count)
+    Control panel (hour slider, replay date, weather, ambulance count)
 ```
+
+`/api/heatmap`, `/api/staging`, and `/api/counterfactual` take an optional `date=YYYY-MM-DD` (2025-01-01 → 2026-06-30). Omit the weather parameters to replay that hour's real weather; pass any of them for a what-if.
 
 ---
 
@@ -177,11 +199,20 @@ Two-phase weighted K-Means:
 
 ### Counterfactual Engine
 
-For each precomputed (hour, dow) combination:
-- Simulates staged response by routing through OSMnx drive-time matrix
-- Applies weather travel factor to both static and staged times
-- Estimates % within 8-minute threshold using a lognormal CDF (CV = 0.95, calibrated to real EMS distributions)
-- Aggregates by borough, SVI quartile, and dispatch zone (demand-weighted)
+Two versions answer "how much faster?":
+
+**Call-level simulation** (`pipeline/08_counterfactual_precompute.py`). This produces the [Key Results](#key-results).
+1. Take 2025 Priority 1–2 calls with valid response times, up to 150 per (hour, weekday) slot.
+2. For each call's actual hour, forecast all 31 zones using that hour's real weather and place 10 staging points with weighted K-Means. Each point snaps to its nearest zone centroid.
+3. **Before** is the call's recorded response time. **After** is the OSMnx drive time from the nearest staging zone to the call's zone.
+4. Results are saved per call (`counterfactual_raw`) and per slot (`counterfactual_summary`, 168 rows).
+
+**Live estimate** (`/api/counterfactual`, what the dashboard shows). This uses the same forecast and borough-fair staging as the map, for the selected date, hour, weather, and ambulance count. Per zone:
+- **Before** = average dispatch + weather-adjusted average travel.
+- **After** = the same dispatch + drive from the nearest staging point. That's the OSMnx time when a zone centroid lies within 2 km of the point, otherwise straight-line at 25 km/h. It's floored at 2 minutes and never worse than before.
+- **% within 8 minutes** comes from a lognormal CDF (CV = 0.95) around each zone's mean. Results are demand-weighted by borough, SVI quartile, and zone.
+
+If the model or its history artifacts are missing, the endpoint falls back to the precomputed simulation.
 
 ---
 
@@ -189,10 +220,12 @@ For each precomputed (hour, dow) combination:
 
 | Source | What We Used |
 |---|---|
-| [NYC Open Data — EMS Incident Dispatch Data](https://data.cityofnewyork.us/Public-Safety/EMS-Incident-Dispatch-Data/76xm-jjuj) | 28.7M rows, 2005–2024 |
-| [Open-Meteo Historical Weather API](https://archive-api.open-meteo.com) | Hourly temperature, precipitation, windspeed for NYC — free, no key |
-| [CDC Social Vulnerability Index](https://www.atsdr.cdc.gov/placeandhealth/svi/) | RPL_THEMES composite score per census tract, aggregated to dispatch zone |
-| [OpenStreetMap via OSMnx](https://osmnx.readthedocs.io) | Full NYC road network — 1,891 zone-pair drive times computed pre-hackathon |
+| [NYC Open Data — EMS Incident Dispatch Data](https://data.cityofnewyork.us/Public-Safety/EMS-Incident-Dispatch-Data/76xm-jjuj) | 7.2M incidents after filtering, Dec 2021 → Jun 2026 |
+| [Open-Meteo Historical Weather API](https://archive-api.open-meteo.com) | Hourly temperature, precipitation, windspeed, and weather code for NYC. Free, no key. |
+| [NYC Open Data — Permitted Event Information](https://data.cityofnewyork.us/City-Government/NYC-Permitted-Event-Information-Historical/bkfu-528j) | Large permitted events per borough per day (`is_major_event`) |
+| NYC holiday + public-school calendars | Hand-coded in `pipeline/fw_calendar.py` (`is_holiday`, `is_school_day`) |
+| [CDC Social Vulnerability Index](https://www.atsdr.cdc.gov/placeandhealth/svi/) | RPL_THEMES composite score, one value per dispatch zone |
+| [OpenStreetMap via OSMnx](https://osmnx.readthedocs.io) | Full NYC drivable road network: drive times from 31 zone centroids and 30 EMS stations to every zone (1,891 pairs) |
 
 All data sources are free and publicly available. No proprietary data.
 
@@ -208,25 +241,29 @@ The 8-minute mark (480 seconds) is the clinical standard for EMS response. For c
 Every borough except Staten Island is currently averaging over this threshold. FirstWave is designed specifically to close that gap.
 ## Data Quality
 
-9 sequential quality filters applied before training:
+Every incident must pass these filters (`pipeline/01_ingest_clean.py`):
 
-```python
-df = df[
-    (df['VALID_INCIDENT_RSPNS_TIME_INDC'] == 'Y') &       # valid response time flag
-    (df['VALID_DISPATCH_RSPNS_TIME_INDC'] == 'Y') &        # valid dispatch time flag
-    (df['REOPEN_INDICATOR'] == 'N') &                      # exclude reopened incidents
-    (df['TRANSFER_INDICATOR'] == 'N') &                    # exclude transfers
-    (df['STANDBY_INDICATOR'] == 'N') &                     # exclude standbys
-    (df['INCIDENT_RESPONSE_SECONDS_QY'].between(1, 7200)) &# response time sanity check
-    (df['BOROUGH'] != 'UNKNOWN') &                         # known borough
-    (df['INCIDENT_DISPATCH_AREA'].isin(VALID_ZONES)) &     # one of 31 clean zones
-    (zone_prefix_matches_borough)                          # B→BRONX, K→BROOKLYN, etc.
-]
+```sql
+incident_dt BETWEEN '2021-12-01' AND '2026-06-30 23:59'   -- Dec 2021 is lag warm-up only
+AND REOPEN_INDICATOR   = 'N'                              -- exclude reopened incidents
+AND TRANSFER_INDICATOR = 'N'                              -- exclude transfers
+AND STANDBY_INDICATOR  = 'N'                              -- exclude standbys
+AND BOROUGH IS NOT NULL AND BOROUGH != 'UNKNOWN'          -- known borough
+AND INCIDENT_DISPATCH_AREA IN (31 clean zones)            -- B1–B5, K1–K7, M1–M9, Q1–Q7, S1–S3
+AND zone prefix matches borough                           -- B→BRONX, K→BROOKLYN, etc.
 ```
 
-- **96.2%** of rows have valid response time flags
-- 2020 excluded entirely (COVID anomaly — 1.42M rows, structurally different patterns)
-- Result: 5.6M clean training rows, 1.5M clean holdout rows
+Response-time validity is **not** a filter for demand, because dropping those calls would undercount it. Validity means both `VALID_*_RSPNS_TIME_INDC` flags are `Y` and the response takes 1–7200 s. It only decides which calls feed response-time averages and the counterfactual (92–96% of calls, depending on the year).
+
+| Split | Dates | Incidents | Zone-hour rows |
+|---|---|---|---|
+| history (lag warm-up) | Dec 2021 | 131,075 | 2,232 |
+| train | 2022-01 → 2024-09 | 4,339,847 | 746,976 |
+| valid (early stopping) | 2024-10 → 2024-12 | 398,430 | 68,448 |
+| test | 2025 | 1,584,147 | 271,560 |
+| test_recent | 2026-01 → 2026-06 | 773,962 | 134,664 |
+
+Grid rows start once a full 4-week look-back exists (2021-12-29), and history rows are never trained on. Every split has one row per zone per hour, zero-call hours included.
 
 ---
 
@@ -298,6 +335,26 @@ If new model artifacts are dropped into `backend/artifacts/`:
 curl -X POST http://localhost:8000/reload
 ```
 
+### 4. Rebuild the model (optional)
+
+The committed artifacts are enough to run the app. To rebuild them from raw data:
+
+```bash
+python -m venv pipeline/.venv && pipeline/.venv/bin/pip install -r pipeline/requirements-dev.txt
+# Raw EMS CSV (~2GB): https://data.cityofnewyork.us/api/views/76xm-jjuj/rows.csv?accessType=DOWNLOAD
+pipeline/.venv/bin/python pipeline/01_ingest_clean.py --csv ~/Downloads/ems_raw.csv
+pipeline/.venv/bin/python pipeline/02_weather_merge.py
+pipeline/.venv/bin/python pipeline/03_spatial_join.py
+pipeline/.venv/bin/python pipeline/04_aggregate.py
+pipeline/.venv/bin/python pipeline/05_train_demand_model.py
+pipeline/.venv/bin/python pipeline/07_staging_optimizer.py        # validation only
+pipeline/.venv/bin/python pipeline/08_counterfactual_precompute.py # ~10–30 min
+pipeline/.venv/bin/python pipeline/test_artifacts.py
+pipeline/.venv/bin/python pipeline/shap_importance.py             # README chart
+```
+
+`06_osmnx_matrix.py` (road network, 30–60 min) only needs rerunning if zones or stations change. `05` exits 1 and writes a candidate model instead of replacing the shipped one if it fails the deployment gate.
+
 ---
 
 ## Dispatch Zones
@@ -316,11 +373,13 @@ Staten Island: S1  S2  S3
 
 ## Demo Scenarios
 
-| Preset | Hour | Day | What it shows |
+Each preset replays a real 2025 hour with its recorded weather.
+
+| Preset | Replayed hour | Ambulances | What it shows |
 |---|---|---|---|
-| **Fri 8PM Peak** | 20:00 | Friday | Bronx + Brooklyn go red. 5 staging points cluster around high-demand zones. This is the pitch. |
-| **Mon 4AM Quiet** | 04:00 | Monday | Map goes teal-green across all boroughs. Contrast with Friday demonstrates demand is predictable. |
-| **Storm** | 18:00 | Wednesday | Weather amplifies demand + travel times. More zones turn orange/red. FirstWave accounts for weather in both forecast and counterfactual. |
+| **Fri 8PM Peak** | Fri 2025-10-10, 20:00 | 5 | Bronx and Brooklyn go red, and staging points cluster around the high-demand zones. This is the pitch. |
+| **Mon 4AM Quiet** | Mon 2025-10-20, 04:00 | 5 | Citywide demand falls to 95 predicted calls/hour, vs 220 on Friday 8PM. The shading is relative to the hour's busiest zone, so compare the totals, not the colors. |
+| **Storm** | Wed 2025-07-30, 18:00 | 7 | The rainiest Wednesday 6 PM of 2025 (8.2 mm/h, heavy rain). Weather feeds both the forecast and the counterfactual's travel times. |
 
 ---
 
@@ -328,11 +387,12 @@ Staten Island: S1  S2  S3
 
 | Layer | Technology | Version |
 |---|---|---|
-| ML — Demand Forecasting | XGBoost | 2.0.3 |
-| ML — Staging Optimizer | scikit-learn (K-Means) | 1.4.1 |
+| ML — Demand Forecasting | XGBoost (count:poisson) | 3.2.0 |
+| ML — Explainability | TreeSHAP (built into XGBoost) + matplotlib | 3.2.0 / 3.11 |
+| ML — Staging Optimizer | scikit-learn (K-Means) | 1.8.0 |
 | ML — AI Dispatcher | OpenAI GPT-4o-mini | latest |
 | Spatial Routing | OSMnx + NetworkX | 1.9.1 / 3.3 |
-| Data Processing | DuckDB, pandas, pyarrow | 1.4+ / 2.2.1 / 16.0 |
+| Data Processing | DuckDB, pandas, pyarrow | 1.5 / 3.0.1 / 23.0.1 |
 | Backend API | FastAPI + Uvicorn | 0.110.0 / 0.29.0 |
 | Database | PostgreSQL + PostGIS | 15 + 3.4 |
 | Frontend | React | 19.2.0 |
@@ -361,8 +421,10 @@ firstwave/
 │   │   └── ai_panel.py         POST /api/ai
 │   ├── models/
 │   │   ├── demand_forecaster.py    XGBoost inference wrapper (all 31 zones)
+│   │   ├── lag_features.py         Serving-side lag features (parity-tested vs pipeline)
+│   │   ├── replay.py               Replay-date, calendar, and real-weather lookup rules
 │   │   └── staging_optimizer.py    Borough-fair weighted K-Means
-│   ├── artifacts/              Pre-computed ML artifacts (pkl + parquet)
+│   ├── artifacts/              Pre-computed ML artifacts (pkl + parquet + model_metrics.json)
 │   ├── scripts/
 │   │   └── seed_zone_boundaries.py PostGIS seeding
 │   └── requirements.txt
@@ -383,8 +445,8 @@ firstwave/
 │       │   ├── Controls/
 │       │   │   ├── ControlPanel.jsx    Left sidebar wrapper
 │       │   │   ├── TimeSlider.jsx      Hour slider + Watch the Wave ▶ button
-│       │   │   ├── DayPicker.jsx       Mon–Sun selector
-│       │   │   ├── WeatherSelector.jsx Clear / Light Rain / Heavy Storm
+│       │   │   ├── DatePicker.jsx      Replay date (2025-01-01 → 2026-06-30)
+│       │   │   ├── WeatherSelector.jsx Actual / Clear / Light Rain / Heavy Storm
 │       │   │   ├── AmbulanceCount.jsx  K selector (1–10)
 │       │   │   └── LayerToggle.jsx     Heatmap / Staging / Coverage / Stations
 │       │   ├── Impact/
@@ -395,22 +457,36 @@ firstwave/
 │       │   │   └── OverlayPanel.jsx    Equity layer toggle + legend
 │       │   └── Chat/
 │       │       └── AiPanel.jsx         AI Dispatcher (pill button → expanded panel)
-│       └── hooks/
-│           ├── useHeatmap.js
-│           ├── useStaging.js
-│           ├── useCounterfactual.js
-│           ├── useZoneHistory.js
-│           └── useStations.js
+│       ├── hooks/
+│       │   ├── useHeatmap.js
+│       │   ├── useStaging.js
+│       │   ├── useCounterfactual.js
+│       │   ├── useZoneHistory.js
+│       │   ├── useStations.js
+│       │   ├── useBreakdown.js
+│       │   ├── useMapOverlays.js
+│       │   └── useNycZipGeoJSON.js
+│       └── utils/
+│           ├── queryParams.js      Controls → API query params
+│           └── replayDate.js       Replay-date helpers (weekday/month from date, AI day moves)
 │
-├── pipeline/                   DuckDB pipeline (8 scripts)
-│   └── test_artifacts.py       41-check artifact validation suite
+├── pipeline/                   DuckDB pipeline (scripts 01–08, run in order)
+│   ├── fw_config.py            Splits, data window, canonical FEATURE_COLS
+│   ├── fw_grid.py              Gap-free zone × hour grid + lag features
+│   ├── fw_calendar.py          Holiday / school-day / event calendar
+│   ├── fw_eval.py              Metrics + deployment gate
+│   ├── fw_ingest.py            Raw CSV column checks
+│   ├── shap_importance.py      SHAP feature-importance chart (docs/images/)
+│   ├── test_artifacts.py       52-check artifact validation suite
+│   └── tests/                  pytest suite incl. train/serve lag parity
 │
 ├── data/
 │   ├── mock_api_responses.json All endpoints mocked (frozen at Hour 0)
-│   ├── ems_stations.json       31 FDNY EMS station locations
+│   ├── ems_stations.json       30 FDNY EMS station locations
 │   └── zone_centroids.json     31 dispatch zone centroids
 │
 ├── CLAUDE.md                   Full technical spec and data dictionary
+├── docs/                       Specs, plans, guides, README images
 ├── PRD_v3.md                   Product Requirements Document v3
 └── devpost_strategy.md         Devpost submission content
 ```
