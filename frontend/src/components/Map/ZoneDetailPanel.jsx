@@ -5,7 +5,7 @@ import { formatSeconds } from '../../utils/formatters';
 
 const Plot = createPlotlyComponent(Plotly);
 
-export default function ZoneDetailPanel({ data, onClose, counterfactualData }) {
+export default function ZoneDetailPanel({ data, onClose, replay = null, counterfactualData }) {
   const sparkData = useMemo(() => [{
     x: Array.from({ length: 24 }, (_, i) => i),
     y: data?.hourly_avg || [],
@@ -55,6 +55,14 @@ export default function ZoneDetailPanel({ data, onClose, counterfactualData }) {
           background: 'none', border: 'none', color: '#888', fontSize: 20, cursor: 'pointer',
         }}>&#x2715;</button>
       </div>
+      {replay && replay.actual !== null && replay.actual !== undefined && (
+        <div style={{ fontSize: 12, color: '#ccc', margin: '4px 0 8px' }}>
+          Replay {replay.date} {String(replay.hour).padStart(2, '0')}:00 —{' '}
+          <span style={{ fontFamily: "'DM Mono', monospace" }}>
+            predicted {Number(replay.predicted).toFixed(1)} · actual {replay.actual}
+          </span>
+        </div>
+      )}
 
       <div style={{ marginBottom: 12 }}>
         <div style={{ fontSize: 12, color: '#aaa', marginBottom: 2 }}>Social Vulnerability</div>

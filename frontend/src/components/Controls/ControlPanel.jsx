@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from 'react';
 import TimeSlider from './TimeSlider';
-import DayPicker from './DayPicker';
+import DatePicker from './DatePicker';
 import WeatherSelector from './WeatherSelector';
 import AmbulanceCount from './AmbulanceCount';
 import LayerToggle from './LayerToggle';
@@ -13,8 +13,8 @@ const Divider = () => (
 function getActivePreset(controls) {
   for (const [key, scenario] of Object.entries(DEMO_SCENARIOS)) {
     if (
+      controls.date === scenario.date &&
       controls.hour === scenario.hour &&
-      controls.dow === scenario.dow &&
       controls.ambulances === scenario.ambulances
     ) {
       return key;
@@ -92,7 +92,7 @@ export default function ControlPanel({ controls, onControlChange, layerVisibilit
         <Divider />
         <TimeSlider value={controls.hour} onChange={(v) => onControlChange('hour', v)} isPlaying={isPlaying} onTogglePlay={onTogglePlay} />
         <Divider />
-        <DayPicker value={controls.dow} onChange={(v) => onControlChange('dow', v)} />
+        <DatePicker value={controls.date} onChange={(v) => onControlChange('date', v)} />
         <Divider />
         <WeatherSelector value={controls.weather} onChange={(v) => onControlChange('weather', v)} />
         <Divider />

@@ -9,30 +9,18 @@ import { useHeatmap } from './hooks/useHeatmap';
 import { useStaging } from './hooks/useStaging';
 import { useCounterfactual } from './hooks/useCounterfactual';
 import { useZoneHistory } from './hooks/useZoneHistory';
-import { DEMO_SCENARIOS, WEATHER_PRESETS } from './constants';
+import { DEMO_SCENARIOS } from './constants';
+import { buildQueryParams } from './utils/queryParams';
+import { applyAiControls } from './utils/replayDate';
 import AiPanel from './components/Chat/AiPanel';
 import { useMapOverlays } from './hooks/useMapOverlays';
 
 const DEFAULT_CONTROLS = {
+  date: '2025-10-10',
   hour: 20,
-  dow: 4,
-  month: 10,
-  weather: 'none',
+  weather: 'actual',
   ambulances: 5,
 };
-
-function resolveWeather(controls) {
-  const preset = WEATHER_PRESETS[controls.weather] || WEATHER_PRESETS.none;
-  return {
-    hour: controls.hour,
-    dow: controls.dow,
-    month: controls.month,
-    temperature: preset.temperature,
-    precipitation: preset.precipitation,
-    windspeed: preset.windspeed,
-    ambulances: controls.ambulances,
-  };
-}
 
 export default function App() {
   const [controls, setControls] = useState(DEFAULT_CONTROLS);
@@ -64,10 +52,9 @@ export default function App() {
     const scenario = DEMO_SCENARIOS[scenarioKey];
     if (!scenario) return;
     const next = {
+      date: scenario.date,
       hour: scenario.hour,
-      dow: scenario.dow,
-      month: scenario.month,
-      weather: scenario.precipitation > 5 ? 'heavy' : scenario.precipitation > 0 ? 'light' : 'none',
+      weather: scenario.weather,
       ambulances: scenario.ambulances,
     };
     setControls(next);
@@ -108,18 +95,28 @@ export default function App() {
 
   const handleAiControlsUpdate = useCallback((partial) => {
     setControls((prev) => {
-      const resolved = { ...prev, ...partial };
+      const resolved = applyAiControls(prev, partial);
       setQueryControls(resolved);
       return resolved;
     });
   }, []);
 
-  const params = resolveWeather(queryControls);
+  const params = buildQueryParams(queryControls);
 
   const { data: heatmapData } = useHeatmap(params);
   const { data: stagingData } = useStaging(params);
   const { data: counterfactualData, isLoading: cfLoading } = useCounterfactual(params);
   const { data: zoneHistoryData } = useZoneHistory(selectedZone);
+
+  const selectedProps = heatmapData?.features?.find((f) => f.properties.zone === selectedZone)?.properties;
+  const replay = selectedProps
+    ? {
+        date: heatmapData.query_params?.date,
+        hour: heatmapData.query_params?.hour,
+        predicted: selectedProps.predicted_count,
+        actual: selectedProps.actual_count ?? null,
+      }
+    : null;
 
   return (
     <>
@@ -149,6 +146,7 @@ export default function App() {
             <ZoneDetailPanel
               data={zoneHistoryData}
               onClose={() => setSelectedZone(null)}
+              replay={replay}
               counterfactualData={counterfactualData}
             />
           )}

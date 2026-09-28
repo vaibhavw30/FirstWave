@@ -1,0 +1,189 @@
+{
+  "trained_at": "2026-09-28T03:59:35",
+  "objective": "count:poisson",
+  "best_iteration": 318,
+  "feature_cols": [
+    "hour_sin",
+    "hour_cos",
+    "dow_sin",
+    "dow_cos",
+    "month_sin",
+    "month_cos",
+    "is_weekend",
+    "temperature_2m",
+    "precipitation",
+    "windspeed_10m",
+    "is_severe_weather",
+    "svi_score",
+    "zone_baseline_avg",
+    "high_acuity_ratio",
+    "held_ratio",
+    "is_holiday",
+    "is_major_event",
+    "is_school_day",
+    "is_heat_emergency",
+    "is_extreme_heat",
+    "subway_disruption_idx",
+    "lag_1h",
+    "lag_2h",
+    "lag_3h",
+    "lag_24h",
+    "lag_168h",
+    "roll_7d_same_hour",
+    "roll_4w_same_hour_dow"
+  ],
+  "splits": {
+    "history": [
+      "2021-12-01",
+      "2021-12-31"
+    ],
+    "train": [
+      "2022-01-01",
+      "2024-09-30"
+    ],
+    "valid": [
+      "2024-10-01",
+      "2024-12-31"
+    ],
+    "test": [
+      "2025-01-01",
+      "2025-12-31"
+    ],
+    "test_recent": [
+      "2026-01-01",
+      "2026-06-30"
+    ]
+  },
+  "data_window": [
+    "2021-12-01",
+    "2026-06-30"
+  ],
+  "valid_rmse_by_objective": {
+    "reg:squarederror": 2.5000714453663964,
+    "count:poisson": 2.499874921837913
+  },
+  "test": {
+    "lag": {
+      "rmse": 2.5252144095056352,
+      "mae": 1.9098131385001786,
+      "poisson_deviance": 1.1389500502571444
+    },
+    "no_lag": {
+      "rmse": 2.5384234562606407,
+      "mae": 1.9171781836440003,
+      "poisson_deviance": 1.1472965131113644
+    },
+    "naive_168h": {
+      "rmse": 3.5690317646109886,
+      "mae": 2.657740436651201,
+      "poisson_deviance": 4.6658707234782595
+    },
+    "baseline_avg": {
+      "rmse": 2.558282181693934,
+      "mae": 1.9281100599883743,
+      "poisson_deviance": 1.1594886740778663
+    }
+  },
+  "test_recent": {
+    "lag": {
+      "rmse": 2.5360918146669444,
+      "mae": 1.9062430917088473,
+      "poisson_deviance": 1.1529683434555937
+    },
+    "no_lag": {
+      "rmse": 2.560053060921808,
+      "mae": 1.9180789330058778,
+      "poisson_deviance": 1.1691096292023682
+    },
+    "naive_168h": {
+      "rmse": 3.5783819983877803,
+      "mae": 2.6492009474989606,
+      "poisson_deviance": 4.758213970668932
+    },
+    "baseline_avg": {
+      "rmse": 2.5785290711358715,
+      "mae": 1.935710193273462,
+      "poisson_deviance": 1.1797516204794827
+    }
+  },
+  "test_rmse_by_borough": {
+    "lag": {
+      "BRONX": 3.0541758337714735,
+      "BROOKLYN": 2.7997712469231155,
+      "MANHATTAN": 2.311983944856726,
+      "QUEENS": 2.3850575547434003,
+      "RICHMOND / STATEN ISLAND": 1.6573104961577634
+    },
+    "no_lag": {
+      "BRONX": 3.064558508240843,
+      "BROOKLYN": 2.816861241223931,
+      "MANHATTAN": 2.333382513071193,
+      "QUEENS": 2.3902594868817393,
+      "RICHMOND / STATEN ISLAND": 1.6588559763324466
+    }
+  },
+  "test_rmse_by_hour": {
+    "lag": [
+      2.351164797026729,
+      2.2304796604510417,
+      2.032192540681355,
+      1.9153310394791816,
+      1.8204063973082194,
+      1.7764058091906643,
+      1.851092469238633,
+      2.1055054849139867,
+      2.3831524258334555,
+      2.6487179062936654,
+      2.75495496472312,
+      2.7946483343778943,
+      2.880047003519433,
+      2.8995204892406807,
+      2.841385125531879,
+      2.8725728106450066,
+      2.833289341008816,
+      2.8698771686383937,
+      2.830773903700997,
+      2.778952125502468,
+      2.7587793382338397,
+      2.65117566625221,
+      2.5540327847854623,
+      2.475121876098581
+    ],
+    "no_lag": [
+      2.365046171102409,
+      2.2512766229858014,
+      2.049971676905615,
+      1.9230902390009559,
+      1.8243471393326889,
+      1.7833537572852434,
+      1.8563845713811198,
+      2.1132040619278714,
+      2.39236595434876,
+      2.654939814328297,
+      2.7626626215337136,
+      2.802668650560198,
+      2.8960460346100345,
+      2.9117249422100966,
+      2.8535482527532263,
+      2.8759675132193987,
+      2.8478643990646044,
+      2.8890488437862762,
+      2.855212891371515,
+      2.797263532283189,
+      2.7810947999842384,
+      2.669396045967493,
+      2.5778222831677,
+      2.487125105947261
+    ]
+  },
+  "gate": {
+    "passed": false,
+    "improvement": 0.005203641938632152,
+    "threshold": 0.02
+  },
+  "gate_override": {
+    "approved_by": "project owner (Vaibhav)",
+    "date": "2026-09-28",
+    "reason": "shipped despite 0.52% < 2% RMSE gate: lag model beats no-lag on every split and borough; Poisson noise floor (RMSE ~2.415 on 2025) caps attainable RMSE gains at hourly zone grain; lag model removes ~11% of reducible MSE and enables date replay."
+  }
+}

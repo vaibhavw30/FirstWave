@@ -890,3 +890,38 @@ the point where survival probability drops ~65% vs a 4-minute response.
 _This file is read by Claude Code at the start of every session via /init._
 _It is also read by GitHub Copilot as an open tab in VS Code._
 _Keep it accurate. When in doubt, add to it — never delete from it._
+
+---
+
+## Model A v2 — Lag Features (added 2026-09-28)
+
+Spec: `docs/superpowers/specs/2026-09-28-lag-features-design.md` · Plan: `docs/superpowers/plans/2026-09-28-lag-features.md`
+
+**Grain:** one row per (zone, local hour), zeros included. **Label:** incidents per zone-hour, counting every incident that passes zone/borough/reopen/transfer/standby filters (response-time validity is NOT a filter for the label).
+
+**Splits:** history Dec 2021 (lag warm-up) · train 2022-01-01→2024-09-30 · valid 2024-10-01→2024-12-31 (early stopping) · test 2025 · test_recent 2026-01-01→2026-06-30.
+
+**FEATURE_COLS (28):** the 21 above, then `lag_1h, lag_2h, lag_3h, lag_24h, lag_168h, roll_7d_same_hour, roll_4w_same_hour_dow`. Canonical list: `pipeline/fw_config.py`.
+
+**Objective:** `count:poisson`, best_iteration `318`.
+
+| 2025 test | RMSE | MAE |
+|---|---|---|
+| lag model | `2.525` | `1.910` |
+| no-lag model | `2.538` | `1.917` |
+| naive same-hour-last-week | `3.569` | `2.658` |
+| zone_baseline_avg | `2.558` | `1.928` |
+
+2026 H1 (test_recent) RMSE: lag `2.536` · no-lag `2.560` · naive `3.578` · baseline `2.579`.
+
+Deployment gate: improvement `0.52%` vs no-lag (threshold 2%) — **FAILED; shipped by owner override (2026-09-28)**, recorded as `gate_override` in `model_metrics.json`. Why: the lag model beats no-lag on every split and every borough, and the Poisson noise floor (RMSE ≈ √mean ≈ 2.415 on 2025, mean 5.83 calls/zone-hour) caps what any model can gain at this grain — the lag model removes ~11% of the reducible MSE, which is only ~0.5% of RMSE. A 2% RMSE gate is close to unreachable here; judge future models on Poisson deviance or share of reducible error instead.
+
+**API (additive):** `/api/heatmap` and `/api/staging` accept optional `date=YYYY-MM-DD` (2025-01-01 → 2026-06-30). With a date, dow/month come from it and lags come from history; without one, the lower-median 2025 date for (month, dow) is used. Heatmap responses add `query_params.date` and per-zone `actual_count`. `/health` adds `hourly_counts`, `calendar_daily`, `weather_hourly`, `model_metrics`.
+
+**Replay weather:** `temperature` / `precipitation` / `windspeed` are now optional. Omit all three and the replayed hour's real weather (from `weather_hourly.parquet`) and its training-defined flags are used (`query_params.weather_source = "actual"`); pass any of them for a what-if (`"request"`, missing values default 15 / 0 / 10). Without historical flags, `is_severe_weather` = precipitation > 0 (matches training). Frontend weather selector default is **Actual**; demo presets are real 2025 dates (Fri 2025-10-10 20:00, Mon 2025-10-20 04:00, Storm 2025-07-30 18:00 ×7). See spec §11.
+
+**New artifacts:** `hourly_counts.parquet` (zone, date_hour, incident_count; 2024-12-01→2026-06-30), `calendar_daily.parquet` (date, zone_prefix, is_holiday, is_school_day, is_major_event; 2025-01-01→2026-06-30), `weather_hourly.parquet` (2025-01-01→2026-06-30, 13,104 rows), `model_metrics.json`.
+
+**Scale change:** `zone_baselines.zone_baseline_avg` is now a true mean hourly count (≈ 1/4 of the old month-summed values). Don't pair the old 21-feature `demand_model.pkl` with the new baselines.
+
+**Local pipeline:** `pipeline/.venv` (see `pipeline/requirements-dev.txt`); run 01→05, 07, 08, then `pipeline/test_artifacts.py`. 05 exits 1 and writes `pipeline/data/demand_model_candidate.pkl` if the gate fails. 08 takes ~10–30 min.

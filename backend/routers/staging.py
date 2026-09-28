@@ -1,7 +1,10 @@
 import asyncio
+import datetime as dt
 import logging
 from functools import lru_cache
-from fastapi import APIRouter, Query
+from typing import Optional
+
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
@@ -13,10 +16,12 @@ def _cached_heatmap_and_staging(
     hour: int, dow: int, month: int,
     temperature: float, precipitation: float, windspeed: float,
     ambulances: int,
+    replay_date_iso: str,
+    weather_flags: tuple | None = None,
 ):
     """
     Cached combined heatmap+staging computation keyed by param tuple.
-    168 = 24 hours × 7 days of caching capacity.
+    Cleared by POST /reload.
     """
     from main import ARTIFACTS
     from models.demand_forecaster import DemandForecaster
@@ -28,6 +33,10 @@ def _cached_heatmap_and_staging(
         temperature, precipitation, windspeed,
         ARTIFACTS["zone_stats"],
         ARTIFACTS["baselines"],
+        replay_date=dt.date.fromisoformat(replay_date_iso),
+        counts_wide=ARTIFACTS["hourly_counts"],
+        calendar=ARTIFACTS["calendar_daily"],
+        weather_flags=dict(weather_flags) if weather_flags else None,
     )
 
     optimizer = StagingOptimizer()
@@ -40,18 +49,33 @@ async def get_staging(
     hour: int = Query(..., ge=0, le=23),
     dow: int = Query(..., ge=0, le=6),
     month: int = Query(..., ge=1, le=12),
-    temperature: float = Query(default=15.0),
-    precipitation: float = Query(default=0.0),
-    windspeed: float = Query(default=10.0),
+    # Omit all three to replay the hour's real weather; any value makes it a what-if.
+    temperature: Optional[float] = Query(default=None),
+    precipitation: Optional[float] = Query(default=None),
+    windspeed: Optional[float] = Query(default=None),
     ambulances: int = Query(default=5, ge=1, le=10),
+    date: Optional[dt.date] = Query(default=None),
 ):
     from main import ARTIFACTS, MOCK_DATA
+    from models.demand_forecaster import DemandForecaster
+    from models.replay import OutOfReplayRange, resolve_request, resolve_weather
+
+    try:
+        replay_date, dow, month = resolve_request(date, dow, month)
+    except OutOfReplayRange as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    wx, wx_flags, _ = resolve_weather(
+        ARTIFACTS["weather_hourly"], replay_date, hour, temperature, precipitation, windspeed)
 
     if ARTIFACTS["demand_model"] is None or ARTIFACTS["baselines"] is None:
         logger.info("Staging: model not loaded, returning mock data")
+        return JSONResponse(content=MOCK_DATA["staging"], headers={"X-Data-Source": "mock"})
+
+    if DemandForecaster(ARTIFACTS["demand_model"]).uses_lags and ARTIFACTS["hourly_counts"] is None:
+        logger.warning("Staging: lag model loaded but hourly_counts missing")
         return JSONResponse(
             content=MOCK_DATA["staging"],
-            headers={"X-Data-Source": "mock"},
+            headers={"X-Data-Source": "mock", "X-Warning": "lag-artifact-missing"},
         )
 
     try:
@@ -60,8 +84,10 @@ async def get_staging(
                 None,
                 lambda: _cached_heatmap_and_staging(
                     hour, dow, month,
-                    round(temperature, 1), round(precipitation, 1), round(windspeed, 1),
+                    round(wx["temperature"], 1), round(wx["precipitation"], 1), round(wx["windspeed"], 1),
                     ambulances,
+                    replay_date.isoformat(),
+                    tuple(sorted(wx_flags.items())) if wx_flags else None,
                 ),
             ),
             timeout=5.0,

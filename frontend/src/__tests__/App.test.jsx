@@ -74,7 +74,7 @@ describe('App', () => {
   it('renders the control panel with all controls', () => {
     renderApp();
     expect(screen.getByText('Hour')).toBeInTheDocument();
-    expect(screen.getByText('Day of Week')).toBeInTheDocument();
+    expect(screen.getByText('Replay Date')).toBeInTheDocument();
     expect(screen.getByText('Weather')).toBeInTheDocument();
     expect(screen.getByText('Ambulances')).toBeInTheDocument();
     expect(screen.getByText('Layers')).toBeInTheDocument();
@@ -103,10 +103,10 @@ describe('App', () => {
     expect(screen.getByText('8:00 PM')).toBeInTheDocument();
   });
 
-  it('defaults to Friday (dow 4) selected', () => {
+  it('defaults to replaying Friday 2025-10-10', () => {
     renderApp();
-    const fri = screen.getByText('Fri');
-    expect(fri.style.fontWeight).toBe('700');
+    expect(screen.getByLabelText('Replay Date').value).toBe('2025-10-10');
+    expect(screen.getByText('Fri')).toBeInTheDocument();
   });
 
   it('defaults to 5 ambulances', () => {
@@ -133,9 +133,7 @@ describe('App', () => {
     renderApp();
     fireEvent.click(screen.getByText('Mon 4AM Quiet'));
     expect(screen.getByText('4:00 AM')).toBeInTheDocument();
-    // Monday should be selected
-    const mon = screen.getByText('Mon');
-    expect(mon.style.fontWeight).toBe('700');
+    expect(screen.getByLabelText('Replay Date').value).toBe('2025-10-20');
   });
 
   it('applies Storm demo scenario', () => {
@@ -156,11 +154,11 @@ describe('App', () => {
     expect(checkboxes[0]).not.toBeChecked();
   });
 
-  it('updates day of week when clicking a day button', () => {
+  it('updates the replay date', () => {
     renderApp();
-    fireEvent.click(screen.getByText('Mon'));
-    const mon = screen.getByText('Mon');
-    expect(mon.style.fontWeight).toBe('700');
+    fireEvent.change(screen.getByLabelText('Replay Date'), { target: { value: '2025-10-13' } });
+    expect(screen.getByLabelText('Replay Date').value).toBe('2025-10-13');
+    expect(screen.getByText('Mon')).toBeInTheDocument();
   });
 
   it('changes weather selection', () => {

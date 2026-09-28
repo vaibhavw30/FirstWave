@@ -53,16 +53,23 @@ export const ZONE_BOROUGH = {
   'S1':'RICHMOND / STATEN ISLAND','S2':'RICHMOND / STATEN ISLAND','S3':'RICHMOND / STATEN ISLAND'
 };
 
+export const REPLAY_MIN_DATE = '2025-01-01';
+export const REPLAY_MAX_DATE = '2026-06-30';
+
 export const DEMO_SCENARIOS = {
-  friday_peak: { hour: 20, dow: 4, month: 10, temperature: 15, precipitation: 0, windspeed: 10, ambulances: 5 },
-  monday_quiet: { hour: 4, dow: 0, month: 10, temperature: 15, precipitation: 0, windspeed: 10, ambulances: 5 },
-  storm: { hour: 18, dow: 2, month: 11, temperature: 8, precipitation: 8, windspeed: 30, ambulances: 7 },
+  // Presets replay each hour's real weather (weather: 'actual').
+  friday_peak: { date: '2025-10-10', hour: 20, weather: 'actual', ambulances: 5 },
+  monday_quiet: { date: '2025-10-20', hour: 4, weather: 'actual', ambulances: 5 },
+  // Rainiest Wednesday 6 PM of 2025 per Open-Meteo: 8.2 mm/h, WMO 65 (heavy rain).
+  storm: { date: '2025-07-30', hour: 18, weather: 'actual', ambulances: 7 },
 };
 
 export const WEATHER_PRESETS = {
   none:  { temperature: 22, precipitation: 0,  windspeed: 8,  label: 'Clear' },
   light: { temperature: 10, precipitation: 4,  windspeed: 20, label: 'Light Rain' },
   heavy: { temperature: 4,  precipitation: 12, windspeed: 40, label: 'Heavy Storm' },
+  // The replayed hour's real weather; the API picks it when no weather params are sent.
+  actual: { actual: true, label: 'Actual' },
 };
 
 export const DOW_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];

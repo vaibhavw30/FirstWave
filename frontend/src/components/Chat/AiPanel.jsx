@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { API_BASE_URL } from '../../constants';
+import { dowFromDate } from '../../utils/replayDate';
 
 const DispatchIcon = () => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -16,7 +17,7 @@ const EXAMPLE_PROMPTS = [
   'Quiet Monday 4 AM?',
 ];
 
-function buildContext(heatmapData, counterfactualData, controls) {
+export function buildContext(heatmapData, counterfactualData, controls) {
   const topZones = [];
   if (heatmapData?.features) {
     const sorted = [...heatmapData.features]
@@ -38,7 +39,8 @@ function buildContext(heatmapData, counterfactualData, controls) {
   }
   return {
     hour: controls.hour,
-    dow: controls.dow,
+    dow: dowFromDate(controls.date),
+    date: controls.date,
     weather: controls.weather,
     ambulances: controls.ambulances,
     top_zones: topZones,

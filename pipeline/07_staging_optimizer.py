@@ -13,6 +13,7 @@ Prerequisites:
 Run: python pipeline/07_staging_optimizer.py
 """
 
+import datetime as dt
 import math
 import pathlib
 import sys
@@ -27,8 +28,10 @@ ARTIFACTS_DIR = pathlib.Path("backend/artifacts")
 MODEL_PKL   = ARTIFACTS_DIR / "demand_model.pkl"
 BASELINE_PQ = ARTIFACTS_DIR / "zone_baselines.parquet"
 STATS_PQ    = ARTIFACTS_DIR / "zone_stats.parquet"
+HOURLY_PQ = ARTIFACTS_DIR / "hourly_counts.parquet"
+CAL_PQ    = ARTIFACTS_DIR / "calendar_daily.parquet"
 
-for p in [MODEL_PKL, BASELINE_PQ, STATS_PQ]:
+for p in [MODEL_PKL, BASELINE_PQ, STATS_PQ, HOURLY_PQ, CAL_PQ]:
     if not p.exists():
         print(f"ERROR: {p} not found. Run Scripts 04 and 05 first.", file=sys.stderr)
         sys.exit(1)
@@ -56,12 +59,6 @@ ZONE_SVI = {
     'Q1':0.71,'Q2':0.44,'Q3':0.38,'Q4':0.55,'Q5':0.67,'Q6':0.48,'Q7':0.41,
     'S1':0.38,'S2':0.32,'S3':0.28,
 }
-FEATURE_COLS = [
-    "hour_sin","hour_cos","dow_sin","dow_cos","month_sin","month_cos",
-    "is_weekend","temperature_2m","precipitation","windspeed_10m",
-    "is_severe_weather","svi_score","zone_baseline_avg",
-    "high_acuity_ratio","held_ratio",
-]
 VALID_ZONES = list(ZONE_CENTROIDS.keys())
 
 # ── Step 1: Load artifacts ─────────────────────────────────────────────────────
@@ -75,40 +72,23 @@ print(f"  zone_baselines: {len(baselines)} rows")
 print(f"  zone_stats: {len(zone_stats)} rows")
 
 # ── Helper functions ───────────────────────────────────────────────────────────
-def build_features(hour, dow, month, temp=15.0, precip=0.0, wind=10.0):
-    """Build 31-zone feature DataFrame and run model inference."""
-    rows = []
-    for zone in VALID_ZONES:
-        brow = baselines[
-            (baselines['INCIDENT_DISPATCH_AREA'] == zone) &
-            (baselines['hour'] == hour) &
-            (baselines['dayofweek'] == dow)
-        ]
-        baseline_avg = float(brow['zone_baseline_avg'].iloc[0]) if len(brow) else 3.0
-        zrow = zone_stats[zone_stats['INCIDENT_DISPATCH_AREA'] == zone]
-        har = float(zrow['high_acuity_ratio'].iloc[0]) if len(zrow) else 0.23
-        hdr = float(zrow['held_ratio'].iloc[0]) if len(zrow) else 0.06
-        rows.append({
-            "zone": zone,
-            "hour_sin":  math.sin(2*math.pi*hour/24),
-            "hour_cos":  math.cos(2*math.pi*hour/24),
-            "dow_sin":   math.sin(2*math.pi*dow/7),
-            "dow_cos":   math.cos(2*math.pi*dow/7),
-            "month_sin": math.sin(2*math.pi*month/12),
-            "month_cos": math.cos(2*math.pi*month/12),
-            "is_weekend": 1 if dow in (5, 6) else 0,
-            "temperature_2m": temp,
-            "precipitation": precip,
-            "windspeed_10m": wind,
-            "is_severe_weather": 1 if precip > 5 else 0,
-            "svi_score": ZONE_SVI[zone],
-            "zone_baseline_avg": baseline_avg,
-            "high_acuity_ratio": har,
-            "held_ratio": hdr,
-        })
-    df = pd.DataFrame(rows)
-    preds = np.clip(model.predict(df[FEATURE_COLS]), 0, None)
-    return dict(zip(VALID_ZONES, preds))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "backend"))
+from models.demand_forecaster import DemandForecaster  # noqa: E402
+from models.lag_features import to_wide  # noqa: E402
+from models.replay import calendar_to_lookup  # noqa: E402
+
+counts_wide = to_wide(pd.read_parquet(HOURLY_PQ))
+calendar = calendar_to_lookup(pd.read_parquet(CAL_PQ))
+forecaster = DemandForecaster(model)
+
+
+def build_features(replay_date: dt.date, hour: int, temp=15.0, precip=0.0, wind=10.0) -> dict:
+    """Predicted demand for all 31 zones at a replayed date + hour."""
+    return forecaster.predict_all_zones(
+        hour, replay_date.weekday(), replay_date.month, temp, precip, wind,
+        zone_stats, baselines,
+        replay_date=replay_date, counts_wide=counts_wide, calendar=calendar,
+    )
 
 
 def stage_ambulances(predicted_counts, K=5):
@@ -141,14 +121,14 @@ def stage_ambulances(predicted_counts, K=5):
 # ── Step 2: Validate 3 scenarios ──────────────────────────────────────────────
 # dow: 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri, 5=Sat, 6=Sun
 scenarios = [
-    ("Monday 4AM (quiet)",   0, 10,  4),
-    ("Wednesday Noon",       2, 10, 12),
-    ("Friday 8PM (peak)",    4, 10, 20),
+    ("Monday 4AM (quiet)", dt.date(2025, 10, 20), 4),
+    ("Wednesday Noon",     dt.date(2025, 10, 22), 12),
+    ("Friday 8PM (peak)",  dt.date(2025, 10, 10), 20),
 ]
 
 results = {}
-for label, dow, month, hour in scenarios:
-    counts  = build_features(hour, dow, month)
+for label, replay_date, hour in scenarios:
+    counts  = build_features(replay_date, hour)
     staging = stage_ambulances(counts, K=5)
     top5    = sorted(counts.items(), key=lambda x: x[1], reverse=True)[:5]
     results[label] = {"counts": counts, "staging": staging, "top5": top5}

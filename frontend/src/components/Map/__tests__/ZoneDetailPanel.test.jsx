@@ -89,6 +89,19 @@ describe('ZoneDetailPanel', () => {
     expect(screen.getByTestId('plotly-chart')).toBeInTheDocument();
   });
 
+  it('shows the replay comparison when given', () => {
+    render(<ZoneDetailPanel data={mockZoneData} onClose={() => {}}
+      replay={{ date: '2025-10-10', hour: 20, predicted: 7.94, actual: 9 }} />);
+    expect(screen.getByText(/2025-10-10 20:00/)).toBeInTheDocument();
+    expect(screen.getByText(/predicted 7\.9 · actual 9/)).toBeInTheDocument();
+  });
+
+  it('hides the replay comparison without an actual count', () => {
+    render(<ZoneDetailPanel data={mockZoneData} onClose={() => {}}
+      replay={{ date: '2025-10-10', hour: 20, predicted: 7.9, actual: null }} />);
+    expect(screen.queryByText(/· actual/)).not.toBeInTheDocument();
+  });
+
   it('returns null when data is undefined', () => {
     const { container } = render(<ZoneDetailPanel data={undefined} onClose={() => {}} />);
     expect(container.innerHTML).toBe('');
