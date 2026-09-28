@@ -1,6 +1,10 @@
 import asyncio
+import datetime as dt
 import logging
-from fastapi import APIRouter, Query
+from typing import Optional
+
+import pandas as pd
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
@@ -63,6 +67,8 @@ def _build_heatmap_from_predictions(
     hour: int, dow: int, month: int,
     zone_geom_cache: dict,
     zone_stats_df,
+    replay_date: dt.date,
+    actual: dict,
 ) -> dict:
     counts = list(predicted_counts.values())
     min_count = min(counts) if counts else 0
@@ -100,13 +106,14 @@ def _build_heatmap_from_predictions(
                 "svi_score": svi,
                 "historical_avg_response_sec": avg_response,
                 "high_acuity_ratio": high_acuity,
+                "actual_count": actual.get(zone),
             },
             "geometry": geom,
         })
 
     return {
         "type": "FeatureCollection",
-        "query_params": {"hour": hour, "dow": dow, "month": month},
+        "query_params": {"hour": hour, "dow": dow, "month": month, "date": replay_date.isoformat()},
         "features": features,
     }
 
@@ -120,20 +127,31 @@ async def get_heatmap(
     precipitation: float = Query(default=0.0),
     windspeed: float = Query(default=10.0),
     ambulances: int = Query(default=5, ge=1, le=10),
+    date: Optional[dt.date] = Query(default=None),
 ):
     from main import ARTIFACTS, MOCK_DATA, ZONE_GEOM_CACHE
+    from models.demand_forecaster import DemandForecaster
+    from models.lag_features import actual_counts
+    from models.replay import OutOfReplayRange, resolve_request
+
+    try:
+        replay_date, dow, month = resolve_request(date, dow, month)
+    except OutOfReplayRange as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
     if ARTIFACTS["demand_model"] is None or ARTIFACTS["baselines"] is None:
         logger.info("Heatmap: model not loaded, returning mock data")
+        return JSONResponse(content=MOCK_DATA["heatmap"], headers={"X-Data-Source": "mock"})
+
+    forecaster = DemandForecaster(ARTIFACTS["demand_model"])
+    if forecaster.uses_lags and ARTIFACTS["hourly_counts"] is None:
+        logger.warning("Heatmap: lag model loaded but hourly_counts missing")
         return JSONResponse(
             content=MOCK_DATA["heatmap"],
-            headers={"X-Data-Source": "mock"},
+            headers={"X-Data-Source": "mock", "X-Warning": "lag-artifact-missing"},
         )
 
     try:
-        from models.demand_forecaster import DemandForecaster
-        forecaster = DemandForecaster(ARTIFACTS["demand_model"])
-
         predicted_counts = await asyncio.wait_for(
             asyncio.get_event_loop().run_in_executor(
                 None,
@@ -142,14 +160,23 @@ async def get_heatmap(
                     temperature, precipitation, windspeed,
                     ARTIFACTS["zone_stats"],
                     ARTIFACTS["baselines"],
+                    replay_date=replay_date,
+                    counts_wide=ARTIFACTS["hourly_counts"],
+                    calendar=ARTIFACTS["calendar_daily"],
                 ),
             ),
             timeout=5.0,
         )
 
+        actual = {}
+        if ARTIFACTS["hourly_counts"] is not None:
+            actual = actual_counts(ARTIFACTS["hourly_counts"],
+                                   pd.Timestamp(replay_date) + pd.Timedelta(hours=hour))
+
         result = _build_heatmap_from_predictions(
             predicted_counts, hour, dow, month,
             ZONE_GEOM_CACHE, ARTIFACTS["zone_stats"],
+            replay_date, actual,
         )
         return JSONResponse(content=result, headers={"X-Data-Source": "model"})
 
