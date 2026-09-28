@@ -6,7 +6,7 @@ The most important script. Produces the before/after impact numbers that power
 the demo's Impact Panel and Devpost write-up.
 
 For all 168 (hour x dow) bins, simulates:
-  - BASELINE: nearest fixed FDNY station drive time to each 2023 Priority 1+2 incident
+  - BASELINE: nearest fixed FDNY station drive time to each 2025 Priority 1+2 incident
   - STAGED:   nearest FirstWave staging zone drive time to the same incidents
 
 Outputs:
@@ -24,6 +24,7 @@ Prerequisites:
 Run: python pipeline/08_counterfactual_precompute.py
 """
 
+import datetime as dt
 import json
 import math
 import pathlib
@@ -47,11 +48,14 @@ BASELINE_PQ  = ARTIFACTS_DIR / "zone_baselines.parquet"
 STATS_PQ     = ARTIFACTS_DIR / "zone_stats.parquet"
 CLEANED_PQ   = PIPELINE_DATA / "incidents_cleaned.parquet"
 STATIONS_JSON = pathlib.Path("data/ems_stations.json")
+HOURLY_PQ  = ARTIFACTS_DIR / "hourly_counts.parquet"
+CAL_PQ     = ARTIFACTS_DIR / "calendar_daily.parquet"
+WEATHER_PQ = PIPELINE_DATA / "weather_hourly.parquet"
 
 SUMMARY_OUT  = ARTIFACTS_DIR / "counterfactual_summary.parquet"
 RAW_OUT      = ARTIFACTS_DIR / "counterfactual_raw.parquet"
 
-for p in [MODEL_PKL, DTM_PKL, BASELINE_PQ, STATS_PQ, CLEANED_PQ]:
+for p in [MODEL_PKL, DTM_PKL, BASELINE_PQ, STATS_PQ, CLEANED_PQ, HOURLY_PQ, CAL_PQ, WEATHER_PQ]:
     if not p.exists():
         print(f"ERROR: {p} not found.", file=sys.stderr)
         sys.exit(1)
@@ -82,15 +86,6 @@ ZONE_SVI = {
     'Q1':0.71,'Q2':0.44,'Q3':0.38,'Q4':0.55,'Q5':0.67,'Q6':0.48,'Q7':0.41,
     'S1':0.38,'S2':0.32,'S3':0.28,
 }
-FEATURE_COLS = [
-    "hour_sin","hour_cos","dow_sin","dow_cos","month_sin","month_cos",
-    "is_weekend","temperature_2m","precipitation","windspeed_10m",
-    "is_severe_weather","svi_score","zone_baseline_avg",
-    "high_acuity_ratio","held_ratio",
-    # New features (must match Script 05 order exactly)
-    "is_holiday","is_major_event","is_school_day",
-    "is_heat_emergency","is_extreme_heat","subway_disruption_idx",
-]
 VALID_ZONES = list(ZONE_CENTROIDS.keys())
 
 # ── Step 1: Load artifacts ─────────────────────────────────────────────────────
@@ -118,30 +113,31 @@ print(f"  zone_baselines: {len(baselines)} rows")
 print(f"  zone_stats: {len(zone_stats)} rows")
 print(f"  drive_time_matrix: {len(dtm):,} pairs")
 
-# ── Step 2: Load 2023 high-acuity incidents ────────────────────────────────────
-print("\nLoading 2023 Priority 1+2 incidents from cleaned parquet...")
+# ── Step 2: Load 2025 high-acuity incidents ────────────────────────────────────
+print("\nLoading 2025 (test split) Priority 1+2 incidents from cleaned parquet...")
 inc_all = pd.read_parquet(CLEANED_PQ, columns=[
-    "CAD_INCIDENT_ID", "BOROUGH", "INCIDENT_DISPATCH_AREA",
-    "hour", "dayofweek", "INCIDENT_RESPONSE_SECONDS_QY",
+    "INCIDENT_ID", "BOROUGH", "INCIDENT_DISPATCH_AREA",
+    "hour", "dayofweek", "date_hour", "INCIDENT_RESPONSE_SECONDS_QY",
     "INCIDENT_TRAVEL_TM_SECONDS_QY", "svi_score",
-    "split", "is_high_acuity",
+    "split", "is_high_acuity", "is_valid_response",
 ])
-incidents_2023 = inc_all[
-    (inc_all["split"] == "test") & (inc_all["is_high_acuity"] == 1)
+incidents_test = inc_all[
+    (inc_all["split"] == "test")
+    & (inc_all["is_high_acuity"] == 1)
+    & (inc_all["is_valid_response"] == 1)
 ].copy()
 del inc_all
 
-print(f"2023 Priority 1+2 incidents: {len(incidents_2023):,}")
+print(f"2025 Priority 1+2 incidents: {len(incidents_test):,}")
 print("Borough distribution:")
-print(incidents_2023["BOROUGH"].value_counts().to_string())
+print(incidents_test["BOROUGH"].value_counts().to_string())
 
-# Assign SVI quartile labels
-incidents_2023["svi_quartile"] = pd.qcut(
-    incidents_2023["svi_score"], q=4, labels=["Q1","Q2","Q3","Q4"]
+incidents_test["svi_quartile"] = pd.qcut(
+    incidents_test["svi_score"], q=4, labels=["Q1", "Q2", "Q3", "Q4"]
 ).astype(str)
 
 print(f"\nSVI quartile distribution:")
-print(incidents_2023["svi_quartile"].value_counts().sort_index().to_string())
+print(incidents_test["svi_quartile"].value_counts().sort_index().to_string())
 
 # ── Helper functions ───────────────────────────────────────────────────────────
 def get_baseline_drive(incident: pd.Series) -> int:
@@ -164,48 +160,6 @@ def get_staged_drive(incident_zone: str, staging_zones: list) -> int:
     return min(times) if times else 9999
 
 
-def predict_counts(hour: int, dow: int, month: int = 10) -> dict:
-    """Run XGBoost inference for all 31 zones, return {zone: predicted_count}."""
-    rows = []
-    for zone in VALID_ZONES:
-        brow = baselines[
-            (baselines['INCIDENT_DISPATCH_AREA'] == zone) &
-            (baselines['hour'] == hour) &
-            (baselines['dayofweek'] == dow)
-        ]
-        baseline_avg = float(brow['zone_baseline_avg'].iloc[0]) if len(brow) else 3.0
-        zrow = zone_stats[zone_stats['INCIDENT_DISPATCH_AREA'] == zone]
-        har = float(zrow['high_acuity_ratio'].iloc[0]) if len(zrow) else 0.23
-        hdr = float(zrow['held_ratio'].iloc[0]) if len(zrow) else 0.06
-        rows.append({
-            "hour_sin":  math.sin(2*math.pi*hour/24),
-            "hour_cos":  math.cos(2*math.pi*hour/24),
-            "dow_sin":   math.sin(2*math.pi*dow/7),
-            "dow_cos":   math.cos(2*math.pi*dow/7),
-            "month_sin": math.sin(2*math.pi*month/12),
-            "month_cos": math.cos(2*math.pi*month/12),
-            "is_weekend": 1 if dow in (5, 6) else 0,
-            "temperature_2m": 15.0,
-            "precipitation": 0.0,
-            "windspeed_10m": 10.0,
-            "is_severe_weather": 0,
-            "svi_score": ZONE_SVI[zone],
-            "zone_baseline_avg": baseline_avg,
-            "high_acuity_ratio": har,
-            "held_ratio": hdr,
-            # New features (defaults for counterfactual: normal weekday conditions)
-            "is_holiday": 0,
-            "is_major_event": 0,
-            "is_school_day": 1,
-            "is_heat_emergency": int(15.0 >= 35.0),   # 0 for default temp
-            "is_extreme_heat": int(15.0 >= 35.0),      # 0 for default temp
-            "subway_disruption_idx": 0.5,
-        })
-    df = pd.DataFrame(rows)
-    preds = np.clip(model.predict(df[FEATURE_COLS]), 0, None)
-    return dict(zip(VALID_ZONES, preds))
-
-
 def get_staging_zones(predicted_counts: dict, K: int = 5) -> list:
     """Run weighted K-Means, return list of K nearest zone codes to cluster centers."""
     zones   = list(predicted_counts.keys())
@@ -223,6 +177,34 @@ def get_staging_zones(predicted_counts: dict, K: int = 5) -> list:
         staging_zones.append(nearest)
     return staging_zones
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "backend"))
+from models.demand_forecaster import DemandForecaster  # noqa: E402
+from models.lag_features import to_wide  # noqa: E402
+from models.replay import calendar_to_lookup  # noqa: E402
+
+forecaster  = DemandForecaster(model)
+counts_wide = to_wide(pd.read_parquet(HOURLY_PQ))
+calendar    = calendar_to_lookup(pd.read_parquet(CAL_PQ))
+weather     = pd.read_parquet(WEATHER_PQ).set_index("date_hour")
+_staging_cache: dict = {}
+
+
+def staging_for(date_hour) -> list:
+    """K=10 staging zones from the model's forecast for this incident's own hour."""
+    date_hour = pd.Timestamp(date_hour)
+    if date_hour not in _staging_cache:
+        w = weather.loc[date_hour]
+        day = date_hour.date()
+        counts = forecaster.predict_all_zones(
+            date_hour.hour, day.weekday(), day.month,
+            float(w["temperature_2m"]), float(w["precipitation"]), float(w["windspeed_10m"]),
+            zone_stats, baselines,
+            replay_date=day, counts_wide=counts_wide, calendar=calendar,
+        )
+        _staging_cache[date_hour] = get_staging_zones(counts, K=10)
+    return _staging_cache[date_hour]
+
+
 # ── Step 3: Main loop -- all 168 (hour x dow) bins ────────────────────────────
 summary_rows = []
 raw_rows     = []
@@ -232,9 +214,9 @@ print(f"\nProcessing {total_bins} hour x dow bins (24 hours x 7 days)...")
 print(f"Max {MAX_INCIDENTS_PER_BIN} incidents sampled per bin for speed\n")
 
 for i, (hour, dow) in enumerate(product(range(24), range(7))):
-    bin_inc = incidents_2023[
-        (incidents_2023["hour"] == hour) &
-        (incidents_2023["dayofweek"] == dow)
+    bin_inc = incidents_test[
+        (incidents_test["hour"] == hour) &
+        (incidents_test["dayofweek"] == dow)
     ]
 
     if len(bin_inc) > MAX_INCIDENTS_PER_BIN:
@@ -250,9 +232,6 @@ for i, (hour, dow) in enumerate(product(range(24), range(7))):
         })
         continue
 
-    # Use October as representative month for staging prediction
-    predicted_counts = predict_counts(hour, dow, month=10)
-    staging_zones    = get_staging_zones(predicted_counts, K=10)
 
     baseline_drives = []
     staged_drives   = []
@@ -260,7 +239,7 @@ for i, (hour, dow) in enumerate(product(range(24), range(7))):
     for _, inc in bin_inc.iterrows():
         zone   = inc["INCIDENT_DISPATCH_AREA"]
         b_time = get_baseline_drive(inc)
-        s_time = get_staged_drive(zone, staging_zones)
+        s_time = get_staged_drive(zone, staging_for(inc["date_hour"]))
         baseline_drives.append(b_time)
         staged_drives.append(s_time)
 

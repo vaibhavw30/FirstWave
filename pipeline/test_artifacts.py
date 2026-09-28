@@ -25,14 +25,13 @@ REQUIRED_FILES = [
     "drive_time_matrix.pkl",
     "counterfactual_summary.parquet",
     "counterfactual_raw.parquet",
+    "hourly_counts.parquet",
+    "calendar_daily.parquet",
+    "model_metrics.json",
 ]
 
-FEATURE_COLS = [
-    "hour_sin","hour_cos","dow_sin","dow_cos","month_sin","month_cos",
-    "is_weekend","temperature_2m","precipitation","windspeed_10m",
-    "is_severe_weather","svi_score","zone_baseline_avg",
-    "high_acuity_ratio","held_ratio",
-]
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "backend"))
+from fw_config import FEATURE_COLS  # noqa: E402
 
 VALID_ZONES = [
     'B1','B2','B3','B4','B5',
@@ -76,34 +75,25 @@ if model_path.exists():
         check("model loads", True)
         check("model has predict()", hasattr(model, "predict"))
 
-        # Feature count
         n_features = model.n_features_in_
-        check("model has 15 features", n_features == 15, f"found {n_features}")
+        check(f"model has {len(FEATURE_COLS)} features", n_features == len(FEATURE_COLS), f"found {n_features}")
+        check("feature order matches fw_config", list(model.feature_names_in_) == FEATURE_COLS)
 
-        # Spot-check prediction (Friday 8PM, Manhattan, typical values)
-        import math
-        hour, dow, month = 20, 4, 10
-        test_row = pd.DataFrame([{
-            "hour_sin":  math.sin(2*math.pi*hour/24),
-            "hour_cos":  math.cos(2*math.pi*hour/24),
-            "dow_sin":   math.sin(2*math.pi*dow/7),
-            "dow_cos":   math.cos(2*math.pi*dow/7),
-            "month_sin": math.sin(2*math.pi*month/12),
-            "month_cos": math.cos(2*math.pi*month/12),
-            "is_weekend": 1 if dow in (5,6) else 0,
-            "temperature_2m": 15.0,
-            "precipitation": 0.0,
-            "windspeed_10m": 10.0,
-            "is_severe_weather": 0,
-            "svi_score": 0.89,          # Bronx B2
-            "zone_baseline_avg": 12.0,   # typical Bronx Friday evening
-            "high_acuity_ratio": 0.28,
-            "held_ratio": 0.09,
-        }])
-        pred = float(model.predict(test_row[FEATURE_COLS])[0])
-        pred = max(pred, 0)
-        check("spot-check prediction >= 0", pred >= 0, f"pred={pred:.2f}")
-        check("spot-check RMSE bound (pred < 100)", pred < 100, f"pred={pred:.2f}")
+        import datetime as dt
+        from models.demand_forecaster import DemandForecaster
+        from models.lag_features import to_wide
+        from models.replay import calendar_to_lookup
+        preds = DemandForecaster(model).predict_all_zones(
+            20, 4, 10, 15.0, 0.0, 10.0,
+            pd.read_parquet(ARTIFACTS_DIR / "zone_stats.parquet"),
+            pd.read_parquet(ARTIFACTS_DIR / "zone_baselines.parquet"),
+            replay_date=dt.date(2025, 10, 10),
+            counts_wide=to_wide(pd.read_parquet(ARTIFACTS_DIR / "hourly_counts.parquet")),
+            calendar=calendar_to_lookup(pd.read_parquet(ARTIFACTS_DIR / "calendar_daily.parquet")),
+        )
+        check("replay prediction covers 31 zones", len(preds) == 31)
+        check("replay predictions in [0, 100)", all(0 <= v < 100 for v in preds.values()),
+              f"max={max(preds.values()):.2f}")
 
     except Exception as e:
         check("model loads", False, str(e))
@@ -298,6 +288,26 @@ if cr_path.exists():
         check("loads without error", False, str(e))
 else:
     print("  SKIP  (file missing)")
+print()
+
+print("[ R ] replay artifacts")
+hc_path = ARTIFACTS_DIR / "hourly_counts.parquet"
+if hc_path.exists():
+    hc = pd.read_parquet(hc_path)
+    check("hourly_counts rows", len(hc) == 429_288, f"rows={len(hc):,}")
+    check("hourly_counts zones", hc["INCIDENT_DISPATCH_AREA"].nunique() == 31)
+    check("hourly_counts range",
+          hc["date_hour"].min() == pd.Timestamp("2024-12-01") and
+          hc["date_hour"].max() == pd.Timestamp("2026-06-30 23:00"))
+cal_path = ARTIFACTS_DIR / "calendar_daily.parquet"
+if cal_path.exists():
+    check("calendar_daily rows", len(pd.read_parquet(cal_path)) == 2_730)
+metrics_path = ARTIFACTS_DIR / "model_metrics.json"
+if metrics_path.exists():
+    import json
+    m = json.loads(metrics_path.read_text())
+    check("model_metrics gate passed", m["gate"]["passed"] is True,
+          f"improvement={m['gate']['improvement']:.2%}")
 print()
 
 # ── Summary ────────────────────────────────────────────────────────────────────
