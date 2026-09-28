@@ -3,6 +3,7 @@ import {
   VALID_ZONES, ZONE_NAMES, ZONE_CENTROIDS, ZONE_SVI,
   ZONE_BOROUGH, DEMO_SCENARIOS, WEATHER_PRESETS, DOW_LABELS,
 } from '../constants';
+import { dowFromDate, isReplayDate } from '../utils/replayDate';
 
 describe('VALID_ZONES', () => {
   it('has exactly 31 zones', () => {
@@ -112,14 +113,14 @@ describe('DEMO_SCENARIOS', () => {
     expect(DEMO_SCENARIOS.storm).toBeDefined();
   });
 
-  it('friday_peak is hour 20 dow 4', () => {
+  it('friday_peak is hour 20 on a Friday', () => {
     expect(DEMO_SCENARIOS.friday_peak.hour).toBe(20);
-    expect(DEMO_SCENARIOS.friday_peak.dow).toBe(4);
+    expect(dowFromDate(DEMO_SCENARIOS.friday_peak.date)).toBe(4);
   });
 
-  it('monday_quiet is hour 4 dow 0', () => {
+  it('monday_quiet is hour 4 on a Monday', () => {
     expect(DEMO_SCENARIOS.monday_quiet.hour).toBe(4);
-    expect(DEMO_SCENARIOS.monday_quiet.dow).toBe(0);
+    expect(dowFromDate(DEMO_SCENARIOS.monday_quiet.date)).toBe(0);
   });
 
   it('storm has high precipitation and windspeed', () => {
@@ -127,12 +128,11 @@ describe('DEMO_SCENARIOS', () => {
     expect(DEMO_SCENARIOS.storm.windspeed).toBeGreaterThan(20);
   });
 
-  it('all scenarios have valid hour (0-23) and dow (0-6)', () => {
+  it('all scenarios have valid hour (0-23) and an in-range replay date', () => {
     Object.values(DEMO_SCENARIOS).forEach(s => {
       expect(s.hour).toBeGreaterThanOrEqual(0);
       expect(s.hour).toBeLessThanOrEqual(23);
-      expect(s.dow).toBeGreaterThanOrEqual(0);
-      expect(s.dow).toBeLessThanOrEqual(6);
+      expect(isReplayDate(s.date)).toBe(true);
     });
   });
 });

@@ -9,28 +9,15 @@ import { useHeatmap } from './hooks/useHeatmap';
 import { useStaging } from './hooks/useStaging';
 import { useCounterfactual } from './hooks/useCounterfactual';
 import { useZoneHistory } from './hooks/useZoneHistory';
-import { DEMO_SCENARIOS, WEATHER_PRESETS } from './constants';
+import { DEMO_SCENARIOS } from './constants';
+import { buildQueryParams } from './utils/queryParams';
 
 const DEFAULT_CONTROLS = {
+  date: '2025-10-10',
   hour: 20,
-  dow: 4,
-  month: 10,
   weather: 'none',
   ambulances: 5,
 };
-
-function resolveWeather(controls) {
-  const preset = WEATHER_PRESETS[controls.weather] || WEATHER_PRESETS.none;
-  return {
-    hour: controls.hour,
-    dow: controls.dow,
-    month: controls.month,
-    temperature: preset.temperature,
-    precipitation: preset.precipitation,
-    windspeed: preset.windspeed,
-    ambulances: controls.ambulances,
-  };
-}
 
 export default function App() {
   const [controls, setControls] = useState(DEFAULT_CONTROLS);
@@ -59,9 +46,8 @@ export default function App() {
     const scenario = DEMO_SCENARIOS[scenarioKey];
     if (!scenario) return;
     const next = {
+      date: scenario.date,
       hour: scenario.hour,
-      dow: scenario.dow,
-      month: scenario.month,
       weather: scenario.precipitation > 5 ? 'heavy' : scenario.precipitation > 0 ? 'light' : 'none',
       ambulances: scenario.ambulances,
     };
@@ -77,14 +63,11 @@ export default function App() {
     setSelectedZone((prev) => (prev === zone ? null : zone));
   }, []);
 
-  const params = resolveWeather(queryControls);
+  const params = buildQueryParams(queryControls);
 
   const { data: heatmapData } = useHeatmap(params);
   const { data: stagingData } = useStaging(params);
-  const { data: counterfactualData, isLoading: cfLoading } = useCounterfactual({
-    hour: queryControls.hour,
-    dow: queryControls.dow,
-  });
+  const { data: counterfactualData, isLoading: cfLoading } = useCounterfactual({ hour: params.hour, dow: params.dow });
   const { data: zoneHistoryData } = useZoneHistory(selectedZone);
 
   return (

@@ -2,13 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import ControlPanel from '../ControlPanel';
 
-const defaultControls = {
-  hour: 20,
-  dow: 4,
-  month: 10,
-  weather: 'none',
-  ambulances: 5,
-};
+const defaultControls = { date: '2025-10-10', hour: 20, weather: 'none', ambulances: 5 };
 
 const defaultVisibility = { heatmap: true, staging: true, coverage: true };
 
@@ -85,13 +79,27 @@ describe('ControlPanel', () => {
     );
     // TimeSlider
     expect(screen.getByText('Hour')).toBeInTheDocument();
-    // DayPicker
-    expect(screen.getByText('Day of Week')).toBeInTheDocument();
+    // DatePicker
+    expect(screen.getByText('Replay Date')).toBeInTheDocument();
     // WeatherSelector
     expect(screen.getByText('Weather')).toBeInTheDocument();
     // AmbulanceCount
     expect(screen.getByText('Ambulances')).toBeInTheDocument();
     // LayerToggle
     expect(screen.getByText('Layers')).toBeInTheDocument();
+  });
+
+  it('highlights the preset matching the current controls', () => {
+    render(
+      <ControlPanel
+        controls={defaultControls}
+        onControlChange={() => {}}
+        layerVisibility={defaultVisibility}
+        onLayerChange={() => {}}
+        onApplyScenario={() => {}}
+      />
+    );
+    expect(screen.getByText('Fri 8PM Peak')).toHaveStyle({ backgroundColor: '#1565C0' });
+    expect(screen.getByText('Storm')).toHaveStyle({ backgroundColor: '#333' });
   });
 });
