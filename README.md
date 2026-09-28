@@ -92,7 +92,7 @@ Click any zone on the map to open a detail panel with its 24-hour demand curve, 
          |
          +-- zone_baselines.parquet     rolling demand avg per (zone, hour, dow)
          +-- zone_stats.parquet         per-zone historical response stats
-         +-- demand_model.pkl           20-feature XGBoost regressor
+         +-- demand_model.pkl           28-feature XGBoost (Poisson) regressor
          +-- drive_time_matrix.pkl      OSMnx shortest paths, 1,891 zone pairs
          +-- counterfactual_*.parquet   precomputed impact for 168 (hour × dow) combos
          |
@@ -127,33 +127,44 @@ Click any zone on the map to open a detail panel with its 24-hour demand curve, 
 
 ### Model A — XGBoost Demand Forecaster
 
-**Target:** `incident_count` (incidents per dispatch zone per hour)
-**Training:** 2019, 2021, 2022 (~5.6M clean incidents)
-**Holdout:** 2023 (~1.5M clean incidents)
-**RMSE:** ~6.0 incidents/zone/hour on 2023 holdout
+**Target:** `incident_count`, calls per dispatch zone per hour. One row per (zone, hour), zero-call hours included.
+**Train:** 2022-01 → 2024-09 · **Early stopping:** Q4 2024 · **Test:** 2025 · **Recent check:** 2026 H1
+**Objective:** `count:poisson` (chosen over squared error on the Q4 2024 split)
 
-**20 features:**
+| 2025 test set | RMSE | MAE |
+|---|---|---|
+| **FirstWave model (with lag features)** | **2.525** | **1.910** |
+| Same model without lag features | 2.538 | 1.917 |
+| Zone average for that hour and weekday | 2.558 | 1.928 |
+| Same hour last week | 3.569 | 2.658 |
 
-| Feature | Description |
+Calls arrive randomly, so even a perfect model has an RMSE of about 2.4 at this level of detail (the Poisson noise floor).
+
+**Training setup:** gradient-boosted trees, `max_depth=6`, `learning_rate=0.05`, `subsample=0.8`, `colsample_bytree=0.8`, `tree_method="hist"`. Up to 2,000 trees; early stopping (patience 50) kept **319**. Full details and the deployment-gate decision are in `backend/artifacts/model_metrics.json` and `CLAUDE.md`.
+
+**28 features** (canonical list: `pipeline/fw_config.py`):
+
+| Group | Features |
 |---|---|
-| `hour_sin`, `hour_cos` | Cyclical hour encoding |
-| `dow_sin`, `dow_cos` | Cyclical day-of-week encoding |
-| `month_sin`, `month_cos` | Cyclical month encoding |
-| `is_weekend` | 1 if Saturday or Sunday |
-| `temperature_2m` | °C (Open-Meteo) |
-| `precipitation` | mm/hr |
-| `windspeed_10m` | km/h |
-| `is_severe_weather` | WMO severe weather code flag |
-| `svi_score` | CDC Social Vulnerability Index (0–1) |
-| `zone_baseline_avg` | **Rolling avg per (zone, hour, dow) — 47% feature importance** |
-| `high_acuity_ratio` | Historical % of severity codes 1+2 |
-| `held_ratio` | Historical % of held calls |
-| `is_holiday` | Federal holiday flag |
-| `is_major_event` | NYC major event flag |
-| `is_school_day` | School session flag |
-| `is_heat_emergency` | Temperature ≥ 32°C |
-| `is_extreme_heat` | Temperature ≥ 35°C |
-| `subway_disruption_idx` | 0–1 MTA disruption level |
+| Long-run baseline | `zone_baseline_avg`: mean calls per hour for this (zone, hour, weekday) over the 2022–2024 training years |
+| Recent history | `lag_1h`, `lag_2h`, `lag_3h`, `lag_24h`, `lag_168h`, `roll_7d_same_hour` (same hour, last 7 days), `roll_4w_same_hour_dow` (same hour and weekday, last 4 weeks) |
+| Time | `hour_sin/cos`, `dow_sin/cos`, `month_sin/cos` (cyclical encodings), `is_weekend` |
+| Weather | `temperature_2m`, `precipitation`, `windspeed_10m`, `is_severe_weather`, `is_extreme_heat` (≥ 35 °C), `is_heat_emergency` (≥ 35 °C, or ≥ 32.2 °C in the prior 24 h), `subway_disruption_idx` (constant placeholder) |
+| Calendar | `is_holiday`, `is_school_day`, `is_major_event` (per borough, NYC permitted events) |
+| Zone character | `svi_score` (CDC SVI), `high_acuity_ratio`, `held_ratio` |
+
+**What drives predictions: SHAP feature importance**
+
+![Mean absolute SHAP value per feature on the 2025 test set](docs/images/shap_importance.png)
+
+These are exact TreeSHAP values over all 271,560 zone-hours in 2025. The model predicts in log space, so a SHAP value *v* multiplies the prediction by *e^v*.
+
+- **The long-run baseline dominates (72%).** "What's normal for this zone at this hour on this weekday" sets the prediction, typically scaling the city-wide average of 5.8 calls up or down by about 1.56×.
+- **Recent history adjusts it (17%).** `roll_7d_same_hour` catches zones running hotter or colder than their long-run norm.
+- **Weather, time, and calendar add small corrections (~10% together).**
+- **Three features are never used:** `is_extreme_heat`, `is_major_event`, and `subway_disruption_idx`.
+
+`zone_baseline_avg` and `roll_7d_same_hour` are highly correlated (r = 0.94), so how credit is split between them is somewhat arbitrary; read them together as "how busy this zone normally is." Regenerate the chart with `python pipeline/shap_importance.py`.
 
 ### Model B — Borough-Fair Staging Optimizer
 
