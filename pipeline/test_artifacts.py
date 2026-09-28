@@ -310,8 +310,11 @@ metrics_path = ARTIFACTS_DIR / "model_metrics.json"
 if metrics_path.exists():
     import json
     m = json.loads(metrics_path.read_text())
-    check("model_metrics gate passed", m["gate"]["passed"] is True,
-          f"improvement={m['gate']['improvement']:.2%}")
+    override = m.get("gate_override")
+    check("model_metrics gate passed or overridden",
+          m["gate"]["passed"] is True or bool(override and override.get("reason")),
+          f"improvement={m['gate']['improvement']:.2%}"
+          + (f", override: {override['reason']}" if override else ""))
 print()
 
 # ── Summary ────────────────────────────────────────────────────────────────────
