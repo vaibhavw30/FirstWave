@@ -1,168 +1,103 @@
 """
-Script 07 — Staging Optimizer Validation
+Script 07 — Staging Optimizer Validation (staging v2)
 FirstWave | GT Hacklytics 2026
 
-Validates the weighted K-Means staging optimizer against 3 scenarios.
-This is a confidence check -- NOT an artifact producer.
+Validates the coverage optimizer (backend/models/staging_optimizer.py) on 3 replayed
+hours, with the same inputs as /api/staging (pipeline/fw_staging.py).
+This is a confidence check -- NOT an artifact producer. Exits 1 if a staging check fails.
 
-Prerequisites:
-  backend/artifacts/demand_model.pkl
-  backend/artifacts/zone_baselines.parquet
-  backend/artifacts/zone_stats.parquet
+Prerequisites: backend/artifacts/{demand_model.pkl, drive_time_matrix.pkl,
+  zone_baselines.parquet, zone_stats.parquet, hourly_counts.parquet,
+  calendar_daily.parquet, weather_hourly.parquet}, data/ems_stations.json
 
-Run: python pipeline/07_staging_optimizer.py
+Run: pipeline/.venv/bin/python pipeline/07_staging_optimizer.py
 """
 
-import datetime as dt
-import math
+import itertools
 import pathlib
 import sys
-import joblib
+
 import numpy as np
 import pandas as pd
-from sklearn.cluster import KMeans
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
 ARTIFACTS_DIR = pathlib.Path("backend/artifacts")
-
-MODEL_PKL   = ARTIFACTS_DIR / "demand_model.pkl"
-BASELINE_PQ = ARTIFACTS_DIR / "zone_baselines.parquet"
-STATS_PQ    = ARTIFACTS_DIR / "zone_stats.parquet"
-HOURLY_PQ = ARTIFACTS_DIR / "hourly_counts.parquet"
-CAL_PQ    = ARTIFACTS_DIR / "calendar_daily.parquet"
-
-for p in [MODEL_PKL, BASELINE_PQ, STATS_PQ, HOURLY_PQ, CAL_PQ]:
-    if not p.exists():
-        print(f"ERROR: {p} not found. Run Scripts 04 and 05 first.", file=sys.stderr)
+for name in ("demand_model.pkl", "drive_time_matrix.pkl", "zone_baselines.parquet", "zone_stats.parquet",
+             "hourly_counts.parquet", "calendar_daily.parquet", "weather_hourly.parquet"):
+    if not (ARTIFACTS_DIR / name).exists():
+        print(f"ERROR: {ARTIFACTS_DIR / name} not found. Run Scripts 04–06 first.", file=sys.stderr)
         sys.exit(1)
 
-# ── Constants ──────────────────────────────────────────────────────────────────
-ZONE_CENTROIDS = {
-    'B1': (-73.9101, 40.8116), 'B2': (-73.9196, 40.8448), 'B3': (-73.8784, 40.8189),
-    'B4': (-73.8600, 40.8784), 'B5': (-73.9056, 40.8651),
-    'K1': (-73.9857, 40.5995), 'K2': (-73.9442, 40.6501), 'K3': (-73.9075, 40.6929),
-    'K4': (-73.9015, 40.6501), 'K5': (-73.9283, 40.6801), 'K6': (-73.9645, 40.6401),
-    'K7': (-73.9573, 40.7201),
-    'M1': (-74.0060, 40.7128), 'M2': (-74.0000, 40.7484), 'M3': (-73.9857, 40.7580),
-    'M4': (-73.9784, 40.7484), 'M5': (-73.9584, 40.7701), 'M6': (-73.9484, 40.7884),
-    'M7': (-73.9428, 40.8048), 'M8': (-73.9373, 40.8284), 'M9': (-73.9312, 40.8484),
-    'Q1': (-73.7840, 40.6001), 'Q2': (-73.8284, 40.7501), 'Q3': (-73.8784, 40.7201),
-    'Q4': (-73.9073, 40.7101), 'Q5': (-73.8073, 40.6901), 'Q6': (-73.9173, 40.7701),
-    'Q7': (-73.8373, 40.7701),
-    'S1': (-74.1115, 40.6401), 'S2': (-74.1515, 40.5901), 'S3': (-74.1915, 40.5301),
-}
-ZONE_SVI = {
-    'B1':0.94,'B2':0.89,'B3':0.87,'B4':0.72,'B5':0.68,
-    'K1':0.52,'K2':0.58,'K3':0.82,'K4':0.84,'K5':0.79,'K6':0.60,'K7':0.45,
-    'M1':0.31,'M2':0.18,'M3':0.15,'M4':0.20,'M5':0.12,
-    'M6':0.14,'M7':0.73,'M8':0.65,'M9':0.61,
-    'Q1':0.71,'Q2':0.44,'Q3':0.38,'Q4':0.55,'Q5':0.67,'Q6':0.48,'Q7':0.41,
-    'S1':0.38,'S2':0.32,'S3':0.28,
-}
-VALID_ZONES = list(ZONE_CENTROIDS.keys())
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from fw_staging import HourlyStager  # noqa: E402
+from models.coverage_model import pct_within  # noqa: E402
+from models.demand_forecaster import VALID_ZONES  # noqa: E402
+from models.staging_optimizer import ZONE_BOROUGH_PREFIX  # noqa: E402
 
-# ── Step 1: Load artifacts ─────────────────────────────────────────────────────
+K = 5
+
 print("Loading artifacts...")
-model      = joblib.load(MODEL_PKL)
-baselines  = pd.read_parquet(BASELINE_PQ)
-zone_stats = pd.read_parquet(STATS_PQ)
-
-print(f"  demand_model.pkl loaded")
-print(f"  zone_baselines: {len(baselines)} rows")
-print(f"  zone_stats: {len(zone_stats)} rows")
-
-# ── Helper functions ───────────────────────────────────────────────────────────
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "backend"))
-from models.demand_forecaster import DemandForecaster  # noqa: E402
-from models.lag_features import to_wide  # noqa: E402
-from models.replay import calendar_to_lookup  # noqa: E402
-
-counts_wide = to_wide(pd.read_parquet(HOURLY_PQ))
-calendar = calendar_to_lookup(pd.read_parquet(CAL_PQ))
-forecaster = DemandForecaster(model)
+stager = HourlyStager(ARTIFACTS_DIR)
+coverage, optimizer = stager.coverage, stager.optimizer
+failures = []
 
 
-def build_features(replay_date: dt.date, hour: int, temp=15.0, precip=0.0, wind=10.0) -> dict:
-    """Predicted demand for all 31 zones at a replayed date + hour."""
-    return forecaster.predict_all_zones(
-        hour, replay_date.weekday(), replay_date.month, temp, precip, wind,
-        zone_stats, baselines,
-        replay_date=replay_date, counts_wide=counts_wide, calendar=calendar,
-    )
+def check(name: str, ok: bool, detail: str = ""):
+    print(f"  {'PASS' if ok else 'FAIL'}: {name}" + (f" — {detail}" if detail else ""))
+    if not ok:
+        failures.append(name)
 
 
-def stage_ambulances(predicted_counts, K=5):
-    """Run weighted K-Means, return K staging points."""
-    zones   = list(predicted_counts.keys())
-    weights = np.array([max(predicted_counts[z], 0.01) for z in zones])
-    coords  = np.array([[ZONE_CENTROIDS[z][1], ZONE_CENTROIDS[z][0]] for z in zones])
-    km = KMeans(n_clusters=K, random_state=42, n_init=20)
-    km.fit(coords, sample_weight=weights)
-    staging = []
-    for i, center in enumerate(km.cluster_centers_):
-        clat, clon = center
-        cluster_zones = [zones[j] for j, label in enumerate(km.labels_) if label == i]
-        nearest_zone = min(
-            cluster_zones,
-            key=lambda z: (ZONE_CENTROIDS[z][1]-clat)**2 + (ZONE_CENTROIDS[z][0]-clon)**2
-        )
-        staging.append({
-            "staging_index": i,
-            "lat": float(clat),
-            "lon": float(clon),
-            "nearest_zone": nearest_zone,
-            "cluster_zones": cluster_zones,
-            "zone_count": len(cluster_zones),
-            "total_demand": sum(predicted_counts[z] for z in cluster_zones),
-        })
-    return staging
+def brute_force_best(counts: dict, k: int, wf: float) -> float:
+    """Best expected calls within 8 min over every k-subset of sites (no borough rule)."""
+    n = len(coverage.zones)
+    ratio = np.hstack([coverage.ratio, np.ones((n, 1))])
+    P = pct_within(coverage.dispatch[:, None] + coverage.travel[:, None] * wf * ratio)
+    d = np.array([max(counts[z], 0.01) for z in coverage.zones])
+    return max(float((d * P[:, list(S) + [n]].max(axis=1)).sum())
+               for S in itertools.combinations(range(n), k))
 
 
 # ── Step 2: Validate 3 scenarios ──────────────────────────────────────────────
-# dow: 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri, 5=Sat, 6=Sun
 scenarios = [
-    ("Monday 4AM (quiet)", dt.date(2025, 10, 20), 4),
-    ("Wednesday Noon",     dt.date(2025, 10, 22), 12),
-    ("Friday 8PM (peak)",  dt.date(2025, 10, 10), 20),
+    ("Monday 4AM (quiet)", pd.Timestamp("2025-10-20 04:00")),
+    ("Wednesday Noon",     pd.Timestamp("2025-10-22 12:00")),
+    ("Friday 8PM (peak)",  pd.Timestamp("2025-10-10 20:00")),
 ]
 
 results = {}
-for label, replay_date, hour in scenarios:
-    counts  = build_features(replay_date, hour)
-    staging = stage_ambulances(counts, K=5)
-    top5    = sorted(counts.items(), key=lambda x: x[1], reverse=True)[:5]
-    results[label] = {"counts": counts, "staging": staging, "top5": top5}
+for label, ts in scenarios:
+    counts, wf = stager.demand(ts)
+    staging = stager.staging(ts, K)
+    top5 = sorted(counts.items(), key=lambda x: x[1], reverse=True)[:5]
+    results[label] = {"ts": ts, "counts": counts, "wf": wf, "staging": staging, "top5": top5}
 
     print(f"\n{'─'*50}")
-    print(f"Scenario: {label}")
+    print(f"Scenario: {label}  (weather factor {wf:.3f})")
     print(f"  Top 5 zones by predicted demand:")
     for zone, count in top5:
         bar = "#" * min(int(count), 30)
         print(f"    {zone}: {count:.1f} {bar}")
     print(f"  Total city demand: {sum(counts.values()):.1f} incidents/hr")
-    print(f"  Staging points (K=5):")
-    for s in staging:
-        print(f"    [{s['staging_index']}] lon={s['lon']:.4f}, lat={s['lat']:.4f} "
-              f"-> nearest zone: {s['nearest_zone']} "
-              f"({s['zone_count']} zones, {s['total_demand']:.1f} demand)")
+    print(f"  Staging sites (K={K}):")
+    for p in staging:
+        print(f"    [{p['staging_index']}] {p['zone']} ({p['lon']:.4f}, {p['lat']:.4f}) "
+              f"improves {p['cluster_zones']} ({p['predicted_demand_coverage']:.1f} demand)")
 
-# ── Step 3: Pass/Fail checks ──────────────────────────────────────────────────
+# ── Step 3: Demand checks (unchanged from v1; informational) ─────────────────
 print("\n" + "=" * 55)
 print("  SCRIPT 07 -- VALIDATION CHECKS")
 print("=" * 55)
 
-# Check 1: Friday 8PM -- Bronx/Brooklyn should dominate top 5
 fri_top5_zones = [z for z, _ in results["Friday 8PM (peak)"]["top5"]]
-bk_in_top5 = sum(1 for z in fri_top5_zones if z.startswith(("B","K")))
+bk_in_top5 = sum(1 for z in fri_top5_zones if z.startswith(("B", "K")))
 print(f"\n  Check 1: Friday 8PM top-5 = {fri_top5_zones}")
 if bk_in_top5 >= 3:
     print(f"  PASS: {bk_in_top5}/5 are B/K zones (Bronx/Brooklyn)")
 else:
     print(f"  FAIL: Only {bk_in_top5}/5 are B/K zones -- check zone_baseline_avg merge")
 
-# Check 2: Monday 4AM -- all zones should be low
 mon_counts = results["Monday 4AM (quiet)"]["counts"]
-mon_max  = max(mon_counts.values())
+mon_max = max(mon_counts.values())
 mon_mean = sum(mon_counts.values()) / len(mon_counts)
 print(f"\n  Check 2: Monday 4AM -- max={mon_max:.2f}, mean={mon_mean:.2f}")
 if mon_max < 8.0:
@@ -170,7 +105,6 @@ if mon_max < 8.0:
 else:
     print(f"  WARNING: Monday 4AM max = {mon_max:.1f} -- seems high for quiet period")
 
-# Check 3: Friday >> Monday
 fri_total = sum(results["Friday 8PM (peak)"]["counts"].values())
 mon_total = sum(results["Monday 4AM (quiet)"]["counts"].values())
 ratio = fri_total / mon_total if mon_total > 0 else 0
@@ -180,18 +114,33 @@ if ratio > 2.0:
 else:
     print(f"  FAIL: Ratio < 2x -- model not capturing temporal patterns")
 
-# Check 4: Staging shifts toward Bronx on Friday
-fri_staging_zones = [s["nearest_zone"] for s in results["Friday 8PM (peak)"]["staging"]]
-mon_staging_zones = [s["nearest_zone"] for s in results["Monday 4AM (quiet)"]["staging"]]
-fri_bronx = sum(1 for z in fri_staging_zones if z.startswith("B"))
-print(f"\n  Check 4: Friday staging = {fri_staging_zones}")
-print(f"           Monday staging  = {mon_staging_zones}")
-if fri_bronx >= 1:
-    print(f"  PASS: {fri_bronx} Friday staging point(s) in Bronx zones")
-else:
-    print(f"  WARNING: No Friday staging in Bronx despite high demand")
+# ── Step 4: Staging checks (hard; exit 1 on failure) ─────────────────────────
+print(f"\n  Check 4: coverage optimizer")
+for label, r in results.items():
+    counts, wf = r["counts"], r["wf"]
+    sites = [p["zone"] for p in r["staging"]]
+    check(f"{label}: {K} distinct valid sites", len(set(sites)) == K and set(sites) <= set(VALID_ZONES),
+          str(sites))
+    check(f"{label}: every borough has a site",
+          {ZONE_BOROUGH_PREFIX[s[0]] for s in sites} == set(ZONE_BOROUGH_PREFIX.values()))
+    staged = optimizer.expected_within(sites, counts, wf)
+    stations_only = optimizer.expected_within([], counts, wf)
+    check(f"{label}: staged coverage > stations only", staged > stations_only,
+          f"{stations_only:.1f} -> {staged:.1f} expected calls within 8 min")
+    k3 = [p["zone"] for p in stager.staging(r["ts"], 3)]
+    best = brute_force_best(counts, 3, wf)
+    check(f"{label}: K=3 matches brute force",
+          abs(optimizer.expected_within(k3, counts, wf) - best) <= 1e-6, f"{best:.4f}")
+
+fri = sorted(p["zone"] for p in results["Friday 8PM (peak)"]["staging"])
+mon = sorted(p["zone"] for p in results["Monday 4AM (quiet)"]["staging"])
+print(f"\n  Placement: Friday 8PM {fri} vs Monday 4AM {mon} "
+      f"({'same sites' if fri == mon else 'sites differ'})")
 
 print("\n" + "=" * 55)
-print("  -> If all checks pass: run python pipeline/08_counterfactual_precompute.py")
-print("  -> If checks fail: debug model merge (see CLAUDE.md troubleshooting)")
+if failures:
+    print(f"  {len(failures)} staging check(s) FAILED: {failures}")
+    print("=" * 55)
+    sys.exit(1)
+print("  -> All staging checks pass: run pipeline/.venv/bin/python pipeline/08_counterfactual_precompute.py")
 print("=" * 55)
