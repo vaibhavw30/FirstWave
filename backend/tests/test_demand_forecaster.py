@@ -75,3 +75,21 @@ def test_defaults_without_calendar():
     frame = DemandForecaster(MODEL_21).build_feature_frame(*ARGS)
     assert (frame["is_school_day"] == 1).all()
     assert (frame["is_holiday"] == 0).all()
+
+
+def test_explicit_weather_flags_override_request_rules():
+    flags = {"is_severe_weather": 1, "is_extreme_heat": 0, "is_heat_emergency": 1}
+    frame = DemandForecaster(MODEL_21).build_feature_frame(
+        18, 2, 7, 28.2, 0.0, 5.8, None, None, weather_flags=flags)
+    assert (frame["is_severe_weather"] == 1).all()
+    assert (frame["is_heat_emergency"] == 1).all()
+    assert (frame["is_extreme_heat"] == 0).all()
+
+
+def test_light_rain_is_severe_like_training():
+    # Training flags any WMO drizzle/rain/snow code as severe, so any measurable
+    # precipitation must count at serving time too.
+    frame = DemandForecaster(MODEL_21).build_feature_frame(20, 4, 10, 12.0, 2.0, 15.0, None, None)
+    assert (frame["is_severe_weather"] == 1).all()
+    dry = DemandForecaster(MODEL_21).build_feature_frame(20, 4, 10, 12.0, 0.0, 15.0, None, None)
+    assert (dry["is_severe_weather"] == 0).all()

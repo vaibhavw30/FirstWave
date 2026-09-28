@@ -91,8 +91,14 @@ class DemandForecaster:
         replay_date=None,
         counts_wide=None,
         calendar=None,
+        weather_flags=None,
     ) -> pd.DataFrame:
-        """31-row feature frame indexed by zone."""
+        """31-row feature frame indexed by zone.
+
+        weather_flags: optional {is_severe_weather, is_extreme_heat, is_heat_emergency}
+        from weather_hourly (the training definitions). Without it the flags are
+        approximated from the request: any precipitation ~ a WMO precipitation code.
+        """
         hour_sin = math.sin(2 * math.pi * hour / 24)
         hour_cos = math.cos(2 * math.pi * hour / 24)
         dow_sin = math.sin(2 * math.pi * dow / 7)
@@ -100,7 +106,13 @@ class DemandForecaster:
         month_sin = math.sin(2 * math.pi * month / 12)
         month_cos = math.cos(2 * math.pi * month / 12)
         is_weekend = 1 if dow in (5, 6) else 0
-        is_severe_weather = 1 if precipitation > 5 else 0
+        if weather_flags is None:
+            weather_flags = {
+                "is_severe_weather": int(precipitation > 0),
+                "is_extreme_heat": int(temperature >= 35.0),
+                "is_heat_emergency": int(temperature >= 35.0),
+            }
+        is_severe_weather = int(weather_flags["is_severe_weather"])
 
         rows = []
         for zone in VALID_ZONES:
@@ -143,8 +155,8 @@ class DemandForecaster:
                 "high_acuity_ratio": high_acuity,
                 "held_ratio": held,
                 **calendar_flags(calendar, replay_date, zone[0]),
-                "is_heat_emergency": int(temperature >= 35.0),
-                "is_extreme_heat": int(temperature >= 35.0),
+                "is_heat_emergency": int(weather_flags["is_heat_emergency"]),
+                "is_extreme_heat": int(weather_flags["is_extreme_heat"]),
                 "subway_disruption_idx": 0.5,
             })
 
@@ -169,11 +181,12 @@ class DemandForecaster:
         replay_date=None,
         counts_wide=None,
         calendar=None,
+        weather_flags=None,
     ) -> dict:
         """Returns {zone_code: predicted_count}."""
         df = self.build_feature_frame(
             hour, dow, month, temperature, precipitation, windspeed,
-            zone_stats_df, baselines_df, replay_date, counts_wide, calendar,
+            zone_stats_df, baselines_df, replay_date, counts_wide, calendar, weather_flags,
         )
         preds = np.clip(self.model.predict(df[self.feature_names]), 0, None)
         return {zone: float(p) for zone, p in zip(df.index, preds)}

@@ -200,6 +200,7 @@ def staging_for(date_hour) -> list:
             float(w["temperature_2m"]), float(w["precipitation"]), float(w["windspeed_10m"]),
             zone_stats, baselines,
             replay_date=day, counts_wide=counts_wide, calendar=calendar,
+            weather_flags={k: int(w[k]) for k in ("is_severe_weather", "is_extreme_heat", "is_heat_emergency")},
         )
         _staging_cache[date_hour] = get_staging_zones(counts, K=10)
     return _staging_cache[date_hour]
