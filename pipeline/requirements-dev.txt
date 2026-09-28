@@ -1,0 +1,10 @@
+# Pins match backend/.venv so the pickled model loads there unchanged.
+duckdb>=1.1
+pandas==3.0.1
+numpy==2.4.2
+xgboost==3.2.0
+scikit-learn==1.8.0
+joblib==1.5.3
+pyarrow==23.0.1
+requests>=2.31.0
+pytest>=8.0
