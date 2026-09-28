@@ -167,7 +167,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "http://localhost:3004", "http://localhost:5173", "http://localhost:5174"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -184,7 +184,7 @@ async def startup_event():
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 
-from routers import heatmap, staging, counterfactual, historical, breakdown, stations  # noqa: E402
+from routers import heatmap, staging, counterfactual, historical, breakdown, stations, ai_panel  # noqa: E402
 
 app.include_router(heatmap.router, prefix="/api")
 app.include_router(staging.router, prefix="/api")
@@ -192,6 +192,7 @@ app.include_router(counterfactual.router, prefix="/api")
 app.include_router(historical.router, prefix="/api")
 app.include_router(breakdown.router, prefix="/api")
 app.include_router(stations.router, prefix="/api")
+app.include_router(ai_panel.router, prefix="/api")
 
 
 # ── Health + Reload ───────────────────────────────────────────────────────────
@@ -217,8 +218,10 @@ async def health():
 @app.post("/reload")
 async def reload_artifacts():
     from routers.staging import _cached_heatmap_and_staging
+    from routers.counterfactual import _compute_dynamic_counterfactual
     load_all_artifacts()
     _cached_heatmap_and_staging.cache_clear()
+    _compute_dynamic_counterfactual.cache_clear()
     _populate_zone_geom_cache()
     return {"status": "reloaded", "artifacts": _artifact_status(), "model_metrics": ARTIFACTS["model_metrics"]}
 

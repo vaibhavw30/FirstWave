@@ -169,3 +169,71 @@ def test_staging_with_actual_weather(api):
     client, _ = api
     r = client.get("/api/staging", params={"hour": 18, "dow": 2, "month": 7, "date": "2025-07-30"})
     assert r.status_code == 200 and r.headers["X-Data-Source"] == "model"
+
+
+def _spy_predict(monkeypatch):
+    from models.demand_forecaster import DemandForecaster
+    calls = []
+    real = DemandForecaster.predict_all_zones
+
+    def spy(self, *args, **kwargs):
+        calls.append((args, kwargs))
+        return real(self, *args, **kwargs)
+
+    monkeypatch.setattr(DemandForecaster, "predict_all_zones", spy)
+    from routers.counterfactual import _compute_dynamic_counterfactual
+    _compute_dynamic_counterfactual.cache_clear()
+    return calls
+
+
+def test_counterfactual_replays_date_with_lags_and_actual_weather(api, monkeypatch):
+    client, main = api
+    calls = _spy_predict(monkeypatch)
+    r = client.get("/api/counterfactual", params={"hour": 20, "dow": 0, "date": "2025-10-10"})
+    assert r.status_code == 200 and r.headers["X-Data-Source"] == "dynamic"
+    assert len(r.json()["by_zone"]) == len(VALID_ZONES)
+    (args, kwargs), = calls
+    assert args[:3] == (20, 4, 10)                      # dow/month come from the date
+    assert args[3:6] == (20.0, 0.0, 7.0)                # the hour's real weather
+    assert kwargs["replay_date"] == dt.date(2025, 10, 10)
+    assert kwargs["counts_wide"] is main.ARTIFACTS["hourly_counts"]
+    assert kwargs["calendar"] is main.ARTIFACTS["calendar_daily"]
+
+
+def test_counterfactual_explicit_weather_is_what_if(api, monkeypatch):
+    client, _ = api
+    calls = _spy_predict(monkeypatch)
+    client.get("/api/counterfactual", params={
+        "hour": 20, "dow": 4, "date": "2025-10-10", "temperature": 4, "precipitation": 12, "windspeed": 40})
+    (args, kwargs), = calls
+    assert args[3:6] == (4.0, 12.0, 40.0)
+    assert kwargs["weather_flags"] is None
+
+
+@pytest.mark.parametrize("bad", ["2024-06-01", "2026-07-01"])
+def test_counterfactual_bad_dates_are_422(api, bad):
+    client, _ = api
+    r = client.get("/api/counterfactual", params={"hour": 20, "dow": 4, "date": bad})
+    assert r.status_code == 422
+
+
+def test_counterfactual_lag_model_without_hourly_counts_skips_dynamic(api):
+    client, main = api
+    from routers.counterfactual import _compute_dynamic_counterfactual
+    _compute_dynamic_counterfactual.cache_clear()
+    saved = main.ARTIFACTS["hourly_counts"]
+    main.ARTIFACTS["hourly_counts"] = None
+    try:
+        r = client.get("/api/counterfactual", params={"hour": 20, "dow": 4, "date": "2025-10-10"})
+        assert r.status_code == 200 and r.headers["X-Data-Source"] != "dynamic"
+    finally:
+        main.ARTIFACTS["hourly_counts"] = saved
+
+
+def test_reload_clears_counterfactual_cache(api):
+    client, _ = api
+    from routers.counterfactual import _compute_dynamic_counterfactual
+    client.get("/api/counterfactual", params={"hour": 9, "dow": 2, "date": "2025-03-05"})
+    assert _compute_dynamic_counterfactual.cache_info().currsize > 0
+    assert client.post("/reload").status_code == 200
+    assert _compute_dynamic_counterfactual.cache_info().currsize == 0

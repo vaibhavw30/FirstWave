@@ -1,0 +1,115 @@
+# ════════════════════════════════════════════════════════════════════════════
+# Quality Check node rules — FirstWave datamorph rebuild
+# One block per "Quality Check" processor. Translate each rule into a datamorph
+# Quality Check expression (assert / warn). Expectations copied from the
+# validation blocks in pipeline/01..08_*.py.
+# ════════════════════════════════════════════════════════════════════════════
+
+proc_quality_1:               # Stage ① — after proc_sql_1
+  relation: proc_sql_1
+  rules:
+    - name: distinct_zones_eq_31
+      expr: "COUNT(DISTINCT INCIDENT_DISPATCH_AREA) = 31"
+      severity: fail
+    - name: training_volume
+      expr: "SUM(CASE WHEN split = 'train' THEN 1 ELSE 0 END) >= 3000000"
+      expect: "~5.6M"
+      severity: fail
+    - name: holdout_volume
+      expr: "SUM(CASE WHEN split = 'test' THEN 1 ELSE 0 END) >= 1000000"
+      expect: "~1.5M"
+      severity: fail
+    - name: zone_borough_prefix_match
+      expr: >
+        SUM(CASE WHEN NOT (
+             (BOROUGH = 'BRONX'       AND INCIDENT_DISPATCH_AREA LIKE 'B%')
+          OR (BOROUGH = 'BROOKLYN'    AND INCIDENT_DISPATCH_AREA LIKE 'K%')
+          OR (BOROUGH = 'MANHATTAN'   AND INCIDENT_DISPATCH_AREA LIKE 'M%')
+          OR (BOROUGH = 'QUEENS'      AND INCIDENT_DISPATCH_AREA LIKE 'Q%')
+          OR (BOROUGH LIKE '%STATEN%' AND INCIDENT_DISPATCH_AREA LIKE 'S%')
+        ) THEN 1 ELSE 0 END) = 0
+      severity: fail
+
+proc_quality_2:               # Stage ② — after proc_sql_2
+  relation: proc_sql_2
+  rules:
+    - name: null_weather_under_0_1pct
+      expr: "AVG(CASE WHEN temperature_2m IS NULL THEN 1.0 ELSE 0.0 END) < 0.001"
+      severity: fail
+    - name: holiday_share_2_to_4pct
+      expr: "AVG(is_holiday) BETWEEN 0.01 AND 0.06"
+      expect: "2-4%"
+      severity: warn
+    - name: school_day_share_45_to_60pct
+      expr: "AVG(is_school_day) BETWEEN 0.20 AND 0.65"
+      expect: "45-60%"
+      severity: warn
+    - name: major_event_present
+      expr: "AVG(is_major_event) >= 0.01"
+      expect: "5-15% (non-fatal if events download skipped)"
+      severity: warn
+    - name: mta_join_populated
+      expr: "AVG(CASE WHEN subway_disruption_idx = 0.5 THEN 1.0 ELSE 0.0 END) < 0.99"
+      expect: "non-default MTA values present"
+      severity: warn
+
+proc_quality_3:               # Stage ③ — after proc_sql_3
+  relation: proc_sql_3
+  rules:
+    - name: no_null_svi
+      expr: "SUM(CASE WHEN svi_score IS NULL THEN 1 ELSE 0 END) = 0"
+      severity: fail
+    - name: distinct_zones_eq_31
+      expr: "COUNT(DISTINCT INCIDENT_DISPATCH_AREA) = 31"
+      severity: fail
+
+proc_quality_4:               # Stage ④ — after proc_sql_4a/4b/4c
+  rules:
+    - name: zone_baselines_rowcount
+      relation: zone_baselines
+      expr: "COUNT(*) BETWEEN 31 AND 5208"      # 31 zones x 24 hours x 7 days
+      severity: warn
+    - name: zone_stats_eq_31
+      relation: zone_stats
+      expr: "COUNT(*) = 31"
+      severity: fail
+    - name: bronx_response_near_638
+      relation: zone_stats
+      expr: >
+        ABS((SELECT AVG(avg_response_seconds) FROM zone_stats
+             WHERE BOROUGH = 'BRONX') - 638) < 60
+      expect: "Bronx ~638s, Manhattan ~630s"
+      severity: warn
+
+# ── Model / simulation gates (asserted inside the Python actions, not SQL) ──────
+model_gate:                   # Stage ⑤ train_demand_model.py
+  rules:
+    - name: rmse_under_4
+      expr: "test_rmse < 4.0"
+      expect: "< 4.0 incidents/zone/hour (warn >4, fail >6)"
+      severity: warn
+    - name: baseline_in_top3_importance
+      expr: "'zone_baseline_avg' in top_3_feature_importances"
+      severity: warn
+
+staging_gate:                 # Stage ⑦ staging_optimizer_validate.py (-> Branch)
+  rules:
+    - name: friday_peak_bk_dominant
+      expr: "count(top5 zones starting B or K) >= 3"
+      severity: fail
+    - name: monday_quiet_low
+      expr: "max(monday_4am demand) < 8.0"
+      severity: warn
+    - name: friday_over_monday_ratio
+      expr: "friday_total / monday_total > 2.0"
+      severity: fail
+    - name: friday_staging_in_bronx
+      expr: "count(friday staging nearest_zone starting B) >= 1"
+      severity: warn
+
+counterfactual_gate:          # Stage ⑧ counterfactual_precompute.py
+  rules:
+    - name: improvement_at_least_5pp
+      expr: "pct_within_8min_staged - pct_within_8min_static >= 5.0"
+      expect: "~61% -> ~83% (i.e. ~+22pp)"
+      severity: warn

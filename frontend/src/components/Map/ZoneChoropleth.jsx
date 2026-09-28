@@ -5,11 +5,11 @@ const fillLayer = {
   type: 'fill',
   paint: {
     'fill-color': [
-      'interpolate', ['linear'], ['get', 'normalized_intensity'],
-      0.0, '#00897B',
-      0.3, '#FDD835',
-      0.6, '#FB8C00',
-      1.0, '#C62828'
+      'interpolate', ['linear'], ['get', 'predicted_count'],
+      0,  '#00897B',
+      5,  '#FDD835',
+      10, '#FB8C00',
+      18, '#C62828'
     ],
     'fill-opacity': 0,
   },

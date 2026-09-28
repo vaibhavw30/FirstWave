@@ -36,18 +36,38 @@ const coverageStroke = {
 
 function distributeAmbulances(features, total) {
   if (!features || features.length === 0) return [];
+  const n = features.length;
   const demands = features.map((f) => f.properties.predicted_demand_coverage || 1);
-  const sumDemand = demands.reduce((a, b) => a + b, 0);
-  const raw = demands.map((d) => (d / sumDemand) * total);
-  const floors = raw.map((r) => Math.floor(r));
-  const remainders = raw.map((r, i) => ({ i, r: r - floors[i] }));
-  let distributed = floors.reduce((a, b) => a + b, 0);
-  remainders.sort((a, b) => b.r - a.r);
-  for (let k = 0; distributed < total && k < remainders.length; k++) {
-    floors[remainders[k].i]++;
-    distributed++;
+
+  if (total < n) {
+    // Fewer ambulances than clusters: give 1 each to top clusters by demand
+    const ranked = demands.map((d, i) => ({ i, d })).sort((a, b) => b.d - a.d);
+    const result = new Array(n).fill(0);
+    for (let k = 0; k < total; k++) {
+      result[ranked[k].i] = 1;
+    }
+    return result;
   }
-  return floors;
+
+  // Guarantee 1 per cluster, then distribute extras by demand
+  const result = new Array(n).fill(1);
+  let extras = total - n;
+  if (extras > 0) {
+    const sumDemand = demands.reduce((a, b) => a + b, 0);
+    const raw = demands.map((d) => (d / sumDemand) * extras);
+    const floors = raw.map((r) => Math.floor(r));
+    const remainders = raw.map((r, i) => ({ i, r: r - floors[i] }));
+    let distributed = floors.reduce((a, b) => a + b, 0);
+    remainders.sort((a, b) => b.r - a.r);
+    for (let k = 0; distributed < extras && k < remainders.length; k++) {
+      floors[remainders[k].i]++;
+      distributed++;
+    }
+    for (let i = 0; i < n; i++) {
+      result[i] += floors[i];
+    }
+  }
+  return result;
 }
 
 function seededRandom(seed) {
@@ -83,7 +103,13 @@ const popupStyle = {
   color: '#e0e0e0',
 };
 
-export default function StagingPins({ data, showPins, showCoverage, ambulanceCount = 5 }) {
+function formatTime(seconds) {
+  const min = Math.floor(seconds / 60);
+  const sec = Math.round(seconds % 60);
+  return sec > 0 ? `${min}m ${sec}s` : `${min}m`;
+}
+
+export default function StagingPins({ data, showPins, showCoverage, ambulanceCount = 5, counterfactualByZone }) {
   const [selectedPin, setSelectedPin] = useState(null);
 
   const features = data?.features || [];
@@ -268,14 +294,63 @@ export default function StagingPins({ data, showPins, showCoverage, ambulanceCou
                 </span>
               </div>
 
-              <div>
-                Est. response: <b style={{
-                  color: '#4caf50',
-                  fontFamily: "'DM Mono', monospace",
-                }}>
-                  {'< ' + Math.max(3, 8 - count) + ' min'}
-                </b>
-              </div>
+              {(() => {
+                const zones = Array.isArray(p.cluster_zones) ? p.cluster_zones : [];
+                const zoneData = zones
+                  .map((z) => counterfactualByZone?.[z])
+                  .filter(Boolean);
+                if (zoneData.length === 0) {
+                  return (
+                    <div>
+                      Est. response: <b style={{
+                        color: '#4caf50',
+                        fontFamily: "'DM Mono', monospace",
+                      }}>
+                        {'< ' + Math.max(3, 8 - count) + ' min'}
+                      </b>
+                    </div>
+                  );
+                }
+                const avgStatic = zoneData.reduce((s, z) => s + z.static_time, 0) / zoneData.length;
+                const avgStaged = zoneData.reduce((s, z) => s + z.staged_time, 0) / zoneData.length;
+                const saved = avgStatic - avgStaged;
+                const stagedColor = avgStaged <= 480 ? '#4caf50' : avgStaged <= 600 ? '#FB8C00' : '#EF5350';
+                return (
+                  <div style={{ marginTop: 4, borderTop: '1px solid #333', paddingTop: 6 }}>
+                    <div style={{ marginBottom: 2, color: '#999', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                      Avg Response Time
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                      <span style={{ color: '#999' }}>Before:</span>
+                      <b style={{ color: '#EF5350', fontFamily: "'DM Mono', monospace" }}>
+                        {formatTime(avgStatic)}
+                      </b>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                      <span style={{ color: '#999' }}>After:</span>
+                      <b style={{ color: stagedColor, fontFamily: "'DM Mono', monospace" }}>
+                        {formatTime(avgStaged)}
+                      </b>
+                    </div>
+                    {saved > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#999' }}>Saved:</span>
+                        <b style={{ color: '#42a5f5', fontFamily: "'DM Mono', monospace" }}>
+                          {formatTime(saved)}
+                        </b>
+                      </div>
+                    )}
+                    <div style={{
+                      marginTop: 4,
+                      fontSize: 9,
+                      color: avgStaged <= 480 ? '#4caf50' : '#FB8C00',
+                      textAlign: 'right',
+                    }}>
+                      {avgStaged <= 480 ? '● Under 8-min target' : '● Above 8-min target'}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </Popup>
         );

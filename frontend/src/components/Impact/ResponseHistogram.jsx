@@ -4,19 +4,17 @@ import Plotly from 'plotly.js-basic-dist-min';
 
 const Plot = createPlotlyComponent(Plotly);
 
-export default function ResponseHistogram({ data }) {
-  if (!data) return null;
-
+export default function ResponseHistogram({ data, selectedBorough }) {
   const plotData = useMemo(() => [
     {
-      x: (data.histogram_baseline_seconds || []).map(s => s / 60),
+      x: (data?.histogram_baseline_seconds || []).map(s => s / 60),
       type: 'histogram',
       name: 'Static',
       marker: { color: 'rgba(239,83,80,0.65)' },
       nbinsx: 15,
     },
     {
-      x: (data.histogram_staged_seconds || []).map(s => s / 60),
+      x: (data?.histogram_staged_seconds || []).map(s => s / 60),
       type: 'histogram',
       name: 'FirstWave',
       marker: { color: 'rgba(66,165,245,0.65)' },
@@ -55,9 +53,14 @@ export default function ResponseHistogram({ data }) {
     }],
   }), []);
 
+  if (!data) return null;
+
   return (
     <div style={{ flex: '1 1 0', padding: '0 8px' }}>
-      <div style={{ fontSize: 11, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Response Time Distribution</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+        <span style={{ fontSize: 11, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1 }}>Response Time Distribution</span>
+        <span style={{ fontSize: 9, color: '#666', textTransform: 'uppercase', letterSpacing: 1 }}>{selectedBorough || 'CITYWIDE'}</span>
+      </div>
       <Plot data={plotData} layout={layout} config={{ displayModeBar: false, staticPlot: true }} style={{ width: '100%' }} />
     </div>
   );

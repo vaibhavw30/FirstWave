@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { dowFromDate, monthFromDate, isReplayDate } from '../replayDate';
+import { dowFromDate, monthFromDate, isReplayDate, dateWithDow, applyAiControls } from '../replayDate';
 import { DEMO_SCENARIOS } from '../../constants';
 
 describe('replayDate', () => {
@@ -26,5 +26,37 @@ describe('replayDate', () => {
     expect(dowFromDate(DEMO_SCENARIOS.friday_peak.date)).toBe(4);
     expect(dowFromDate(DEMO_SCENARIOS.monday_quiet.date)).toBe(0);
     expect(dowFromDate(DEMO_SCENARIOS.storm.date)).toBe(2);
+  });
+});
+
+describe('dateWithDow', () => {
+  it('moves the date to the requested weekday in the same Mon–Sun week', () => {
+    expect(dateWithDow('2025-10-10', 0)).toBe('2025-10-06');
+    expect(dateWithDow('2025-10-10', 4)).toBe('2025-10-10');
+    expect(dateWithDow('2025-10-10', 6)).toBe('2025-10-12');
+  });
+
+  it('stays inside the replay window at its edges', () => {
+    expect(dateWithDow('2025-01-01', 0)).toBe('2025-01-06');
+    expect(dateWithDow('2026-06-30', 6)).toBe('2026-06-28');
+  });
+});
+
+describe('applyAiControls', () => {
+  const prev = { date: '2025-10-10', hour: 20, weather: 'actual', ambulances: 5 };
+
+  it('turns an AI day-of-week into a replay date and drops dow', () => {
+    expect(applyAiControls(prev, { hour: 4, dow: 0 })).toEqual({
+      date: '2025-10-06', hour: 4, weather: 'actual', ambulances: 5,
+    });
+  });
+
+  it('keeps the date when the AI only changes the hour', () => {
+    expect(applyAiControls(prev, { hour: 8 })).toEqual({ ...prev, hour: 8 });
+  });
+
+  it('restores a full controls snapshot unchanged (undo)', () => {
+    const snap = { date: '2025-07-30', hour: 18, weather: 'actual', ambulances: 7 };
+    expect(applyAiControls(prev, snap)).toEqual(snap);
   });
 });
