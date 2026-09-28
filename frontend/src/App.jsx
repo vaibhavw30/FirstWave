@@ -70,6 +70,16 @@ export default function App() {
   const { data: counterfactualData, isLoading: cfLoading } = useCounterfactual({ hour: params.hour, dow: params.dow });
   const { data: zoneHistoryData } = useZoneHistory(selectedZone);
 
+  const selectedProps = heatmapData?.features?.find((f) => f.properties.zone === selectedZone)?.properties;
+  const replay = selectedProps
+    ? {
+        date: heatmapData.query_params?.date,
+        hour: heatmapData.query_params?.hour,
+        predicted: selectedProps.predicted_count,
+        actual: selectedProps.actual_count ?? null,
+      }
+    : null;
+
   return (
     <>
       <Header />
@@ -94,6 +104,7 @@ export default function App() {
             <ZoneDetailPanel
               data={zoneHistoryData}
               onClose={() => setSelectedZone(null)}
+              replay={replay}
             />
           )}
         </div>

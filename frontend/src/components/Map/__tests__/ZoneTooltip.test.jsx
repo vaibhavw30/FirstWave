@@ -73,4 +73,26 @@ describe('ZoneTooltip', () => {
     expect(screen.getByText(/8.3/)).toBeInTheDocument();
     expect(screen.getByText(/10 min 30 sec/)).toBeInTheDocument();
   });
+
+  const base = {
+    zone: 'K7', zone_name: 'Williamsburg', borough: 'BROOKLYN',
+    normalized_intensity: 0.4, predicted_count: 7.9, svi_score: 0.45,
+    historical_avg_response_sec: 542,
+  };
+
+  it('shows the actual count when the API returns one', () => {
+    render(<ZoneTooltip info={{ x: 0, y: 0, properties: { ...base, actual_count: 9 } }} />);
+    expect(screen.getByText(/Actual:/)).toBeInTheDocument();
+    expect(screen.getByText('9')).toBeInTheDocument();
+  });
+
+  it('omits the actual line in mock mode', () => {
+    render(<ZoneTooltip info={{ x: 0, y: 0, properties: base }} />);
+    expect(screen.queryByText(/Actual:/)).not.toBeInTheDocument();
+  });
+
+  it('shows an actual count of zero', () => {
+    render(<ZoneTooltip info={{ x: 0, y: 0, properties: { ...base, actual_count: 0 } }} />);
+    expect(screen.getByText(/Actual:/)).toBeInTheDocument();
+  });
 });

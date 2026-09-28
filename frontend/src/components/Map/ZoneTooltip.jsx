@@ -31,6 +31,11 @@ export default function ZoneTooltip({ info }) {
         }} />
         <span>Predicted: <b style={{ fontFamily: "'DM Mono', monospace" }}>{typeof p.predicted_count === 'string' ? parseFloat(p.predicted_count).toFixed(1) : p.predicted_count?.toFixed?.(1) ?? '—'}</b> calls/hr</span>
       </div>
+      {p.actual_count !== undefined && p.actual_count !== null && (
+        <div style={{ marginBottom: 4 }}>
+          Actual: <b style={{ fontFamily: "'DM Mono', monospace" }}>{p.actual_count}</b> calls
+        </div>
+      )}
       <div>SVI: <b style={{ fontFamily: "'DM Mono', monospace" }}>{p.svi_score}</b></div>
       <div>Avg Response: <b style={{ fontFamily: "'DM Mono', monospace" }}>{formatSeconds(typeof p.historical_avg_response_sec === 'string' ? parseFloat(p.historical_avg_response_sec) : p.historical_avg_response_sec)}</b></div>
     </div>
