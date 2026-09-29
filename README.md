@@ -122,7 +122,7 @@ Click any zone on the map to open a detail panel with its 24-hour demand curve, 
 [ FastAPI Backend ]  — artifacts loaded at startup, hot-reloadable
     GET  /api/heatmap           31-zone forecast GeoJSON (+ actual calls when replaying a date)
     GET  /api/staging           K coverage-optimal staging locations GeoJSON
-    GET  /api/counterfactual    coverage + time saved + by_borough + by_svi + by_zone
+    GET  /api/counterfactual    coverage + time saved (median and mean) + by_borough + by_svi + by_zone
     GET  /api/historical/:zone  per-zone 24-hour demand + response stats
     GET  /api/breakdown         borough-level performance breakdown
     GET  /api/stations          FDNY EMS station locations GeoJSON
@@ -133,7 +133,7 @@ Click any zone on the map to open a detail panel with its 24-hour demand curve, 
          v
 [ React 19 + Mapbox GL JS 3.18 Dashboard ]
     Choropleth demand heatmap (31 dispatch zones, teal → red)
-    Staging pins with 8-min coverage circles (3,500m radius)
+    Staging pins with fixed 3,500 m display circles
     Watch the Wave animation (24-hour playback, 1.5s/step)
     FDNY stations overlay (grey markers, hover tooltips)
     Equity / SVI ZIP-level overlay (purple gradient)
@@ -219,6 +219,8 @@ Two versions answer "how much faster?":
 - **% within 8 minutes** comes from a lognormal CDF (CV = 0.95) around each zone's mean. Results are demand-weighted by borough, SVI quartile, and zone.
 
 The live estimate works from zone averages and the lognormal; the call-level simulation uses real per-call times. They share placement and travel model, so they are close but not identical.
+
+The response carries both `median_seconds_saved` and `mean_seconds_saved` (top level), and `median_saved_sec` and `mean_saved_sec` in each `by_borough` and `by_svi_quartile` entry. Most calls are in zones no staged unit improves, so the medians are 0 for most slots; the means are the informative figure.
 
 If the model or its history artifacts are missing, the endpoint falls back to the precomputed simulation.
 

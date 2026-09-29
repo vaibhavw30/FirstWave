@@ -6,6 +6,7 @@ from functools import lru_cache
 from typing import Optional
 
 import numpy as np
+import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 
@@ -146,6 +147,7 @@ def _compute_dynamic_counterfactual(
             "static": round(b_static_8, 1),
             "staged": round(b_staged_8, 1),
             "median_saved_sec": round(float(np.median(b_saved_exp)), 1),
+            "mean_saved_sec": round(_weighted_mean_saved(b_zones), 1),
         }
 
     # By SVI quartile
@@ -153,13 +155,14 @@ def _compute_dynamic_counterfactual(
     for q in ["Q1", "Q2", "Q3", "Q4"]:
         q_zones = [zd for zd in zone_data if _svi_quartile(zd["svi"]) == q]
         if not q_zones:
-            by_svi_quartile[q] = {"median_saved_sec": 0.0}
+            by_svi_quartile[q] = {"median_saved_sec": 0.0, "mean_saved_sec": 0.0}
             continue
         q_saved_exp = []
         for zd in q_zones:
             q_saved_exp.extend([zd["seconds_saved"]] * max(1, round(zd["demand"])))
         by_svi_quartile[q] = {
             "median_saved_sec": round(float(np.median(q_saved_exp)), 1),
+            "mean_saved_sec": round(_weighted_mean_saved(q_zones), 1),
         }
 
     # Histogram: demand-weighted per-zone response times
@@ -193,6 +196,7 @@ def _compute_dynamic_counterfactual(
         "hour": hour,
         "dayofweek": dow,
         "median_seconds_saved": round(median_saved, 1),
+        "mean_seconds_saved": round(weighted_saved, 1),
         "pct_within_8min_static": round(pct_static, 1),
         "pct_within_8min_staged": round(pct_staged, 1),
         "by_borough": by_borough,
@@ -201,6 +205,24 @@ def _compute_dynamic_counterfactual(
         "histogram_staged_seconds": histogram_staged,
         "by_zone": by_zone,
     }
+
+
+def _weighted_mean_saved(zones):
+    """Mean seconds saved over zone dicts, weighted like the median expansion (max(1, round(demand)))."""
+    weights = [max(1, round(zd["demand"])) for zd in zones]
+    return sum(zd["seconds_saved"] * w for zd, w in zip(zones, weights)) / sum(weights)
+
+
+def _slot_rows(raw_df, hour, dow):
+    if raw_df is None or not {"hour", "dayofweek"} <= set(raw_df.columns):
+        return pd.DataFrame()
+    return raw_df[(raw_df["hour"] == hour) & (raw_df["dayofweek"] == dow)]
+
+
+def _mean_saved(rows):
+    if rows is None or rows.empty or "seconds_saved" not in rows.columns:
+        return 0.0
+    return float(rows["seconds_saved"].mean())
 
 
 @router.get("/counterfactual")
@@ -278,10 +300,13 @@ async def get_counterfactual(
             )
 
         r = row.iloc[0]
+        # Means describe this (hour, dayofweek) slot only; 0.0 when rows or the column are missing.
+        slot_raw = _slot_rows(raw_df, hour, dow)
         result = {
             "hour": hour,
             "dayofweek": dow,
             "median_seconds_saved": float(r["median_seconds_saved"]),
+            "mean_seconds_saved": _mean_saved(slot_raw),
             "pct_within_8min_static": float(r["pct_within_8min_static"]),
             "pct_within_8min_staged": float(r["pct_within_8min_staged"]),
             "by_borough": {},
@@ -300,6 +325,7 @@ async def get_counterfactual(
                             "static": float(b["baseline_within_8min"].mean() * 100) if "baseline_within_8min" in b.columns else 0.0,
                             "staged": float(b["staged_within_8min"].mean() * 100) if "staged_within_8min" in b.columns else 0.0,
                             "median_saved_sec": float(b["seconds_saved"].median()) if "seconds_saved" in b.columns else 0.0,
+                            "mean_saved_sec": _mean_saved(slot_raw[slot_raw["borough"] == borough]),
                         }
 
             if "svi_quartile" in raw_df.columns:
@@ -308,6 +334,7 @@ async def get_counterfactual(
                     if not qdata.empty:
                         result["by_svi_quartile"][q] = {
                             "median_saved_sec": float(qdata["seconds_saved"].median()) if "seconds_saved" in qdata.columns else 0.0,
+                            "mean_saved_sec": _mean_saved(slot_raw[slot_raw["svi_quartile"] == q]),
                         }
 
         if not result["by_borough"]:
