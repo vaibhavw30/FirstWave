@@ -89,7 +89,7 @@ A GPT-4o-mini-powered panel in the top-right corner of the dashboard. Two modes:
 - **Interactive chat:** Describe any scenario in natural language. "Yankees game Friday night?" The AI responds and sets the hour and weekday for you; the replay date moves to that weekday in the same week. If the map changes, an **↩ Undo** button appears in the chat to revert.
 
 ### Equity / SVI Layer
-A ZIP-level Social Vulnerability Index overlay in a purple gradient (transparent → dark purple for SVI 0→1). The impact panel breaks down response time savings by SVI quartile, proving the algorithm is fair as well as fast.
+A ZIP-level Social Vulnerability Index overlay in a purple gradient (transparent → dark purple for SVI 0→1). The impact panel breaks down estimated time savings by SVI quartile, so dispatchers can see who benefits; placement follows station-coverage gaps rather than vulnerability, so the gain is uneven across quartiles.
 
 ### FDNY Stations Overlay
 Toggle on 30 FDNY EMS station locations as grey markers on the map. Hover for station name, borough, and address. The spatial gap between fixed station locations and where demand actually concentrates is immediately visible.
