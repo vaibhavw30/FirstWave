@@ -56,6 +56,21 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from fw_staging import HourlyStager  # noqa: E402
 from models.coverage_model import call_level_after  # noqa: E402
 
+
+
+def wmean(values, weights) -> float:
+    return float(np.average(np.asarray(values, dtype=float), weights=weights))
+
+
+def wmedian(values, weights) -> float:
+    """Weighted median: first sorted value whose cumulative weight reaches 50% of the total."""
+    values = np.asarray(values, dtype=float)
+    weights = np.asarray(weights, dtype=float)
+    order = np.argsort(values, kind="stable")
+    cum = np.cumsum(weights[order])
+    return float(values[order][np.searchsorted(cum, 0.5 * cum[-1])])
+
+
 # ── Step 1: Load artifacts ─────────────────────────────────────────────────────
 print("Loading artifacts...")
 stager = HourlyStager(ARTIFACTS_DIR)
@@ -89,12 +104,17 @@ assert incidents_test["INCIDENT_DISPATCH_AREA"].isin(list(coverage.index)).all()
 
 # ── Step 3: Sample up to 150 calls per (hour x dow) bin ───────────────────────
 samples = []
+slot_weight = {}   # (hour, dow) -> eligible calls / sampled calls, so aggregates reflect 2025
 for hour, dow in product(range(24), range(7)):
     b = incidents_test[(incidents_test["hour"] == hour) & (incidents_test["dayofweek"] == dow)]
+    n_eligible = len(b)
     if len(b) > MAX_INCIDENTS_PER_BIN:
         b = b.sample(MAX_INCIDENTS_PER_BIN, random_state=42)
+    if len(b):
+        slot_weight[(hour, dow)] = n_eligible / len(b)
     samples.append(b)
 calls = pd.concat(samples, ignore_index=True)
+w = np.array([slot_weight[(h, d)] for h, d in zip(calls["hour"], calls["dayofweek"])])
 response = calls["INCIDENT_RESPONSE_SECONDS_QY"].to_numpy(dtype=float)
 travel = calls["INCIDENT_TRAVEL_TM_SECONDS_QY"].to_numpy(dtype=float)
 zone_idx = calls["INCIDENT_DISPATCH_AREA"].map(coverage.index).to_numpy(dtype=int)
@@ -144,37 +164,41 @@ print(f"counterfactual_summary.parquet: {len(summary_df)} rows -> {SUMMARY_OUT}"
 print(f"counterfactual_raw.parquet:     {len(raw_df):,} rows -> {RAW_OUT}")
 
 # ── Step 5: Print key results ──────────────────────────────────────────────────
+# Every aggregate below is weighted to the 2025 population (the parquet files are not).
 saved = raw_df["seconds_saved"]
-static_pct = raw_df["baseline_within_8min"].mean() * 100
-staged_pct = raw_df["staged_within_8min"].mean() * 100
+static_pct = wmean(raw_df["baseline_within_8min"], w) * 100
+staged_pct = wmean(raw_df["staged_within_8min"], w) * 100
 
 print()
 print("=" * 60)
 print(f"  FIRSTWAVE COUNTERFACTUAL RESULTS (K={HEADLINE_K}, call level)")
 print("=" * 60)
+print("  Aggregates weighted to 2025 population (w = eligible/sampled per hour x dow slot)")
 print(f"  Calls scored:                {len(raw_df):,}")
 print(f"  Within 8 min -- before:      {static_pct:.1f}%")
 print(f"  Within 8 min -- after:       {staged_pct:.1f}%  (+{staged_pct - static_pct:.1f} pp)")
-print(f"  Median seconds saved:        {saved.median():.0f} s")
-print(f"  Mean seconds saved:          {saved.mean():.0f} s")
-print(f"  Calls whose zone improves:   {(saved > 0).mean() * 100:.1f}%")
+print(f"  Median seconds saved:        {wmedian(saved, w):.0f} s")
+print(f"  Mean seconds saved:          {wmean(saved, w):.0f} s")
+print(f"  Calls whose zone improves:   {wmean(saved > 0, w) * 100:.1f}%")
 
 print("\n  By Borough (before -> after, median / mean seconds saved):")
 borough_pct = {}
 for borough in BOROUGHS:
-    bdf = raw_df[raw_df["borough"] == borough]
-    b_pct = bdf["baseline_within_8min"].mean() * 100
-    s_pct = bdf["staged_within_8min"].mean() * 100
+    m = (raw_df["borough"] == borough).to_numpy()
+    bdf, bw = raw_df[m], w[m]
+    b_pct = wmean(bdf["baseline_within_8min"], bw) * 100
+    s_pct = wmean(bdf["staged_within_8min"], bw) * 100
     borough_pct[borough] = (b_pct, s_pct)
     print(f"    {borough[:25]:25s}: {b_pct:.1f}% -> {s_pct:.1f}%, "
-          f"{bdf['seconds_saved'].median():.0f}s / {bdf['seconds_saved'].mean():.0f}s")
+          f"{wmedian(bdf['seconds_saved'], bw):.0f}s / {wmean(bdf['seconds_saved'], bw):.0f}s")
 
 print("\n  By SVI Quartile (equity, informational):")
 svi_saved = {}
 for q in ["Q1", "Q2", "Q3", "Q4"]:
-    qdf = raw_df[raw_df["svi_quartile"] == q]
-    svi_saved[q] = (qdf["seconds_saved"].median(), qdf["seconds_saved"].mean())
-    print(f"    {q}: {qdf['baseline_within_8min'].mean()*100:.1f}% -> {qdf['staged_within_8min'].mean()*100:.1f}%, "
+    m = (raw_df["svi_quartile"] == q).to_numpy()
+    qdf, qw = raw_df[m], w[m]
+    svi_saved[q] = (wmedian(qdf["seconds_saved"], qw), wmean(qdf["seconds_saved"], qw))
+    print(f"    {q}: {wmean(qdf['baseline_within_8min'], qw)*100:.1f}% -> {wmean(qdf['staged_within_8min'], qw)*100:.1f}%, "
           f"median {svi_saved[q][0]:.0f}s, mean {svi_saved[q][1]:.0f}s saved")
 
 layouts = pd.Series([tuple(sorted(p["zone"] for p in stager.staging(ts, HEADLINE_K))) for ts in hours])
@@ -185,7 +209,7 @@ print(f"\n  Placement stability: {layouts.nunique()} distinct {HEADLINE_K}-site 
 print("\n  Sensitivity (same calls, sites re-placed each hour):")
 sens = {HEADLINE_K: staged_pct}
 for K in SENSITIVITY_K:
-    sens[K] = (staged_response(K) <= THRESHOLD).mean() * 100
+    sens[K] = wmean(staged_response(K) <= THRESHOLD, w) * 100
 for K in sorted(sens):
     print(f"    K={K:2d}: {static_pct:.1f}% -> {sens[K]:.1f}% within 8 min")
 
@@ -193,9 +217,9 @@ readme = {
     "N_CALLS": f"{len(raw_df):,}",
     "STATIC_PCT": f"{static_pct:.1f}",
     "STAGED_PCT": f"{staged_pct:.1f}",
-    "MEDIAN_SAVED": f"{saved.median():.0f}",
-    "MEAN_SAVED": f"{saved.mean():.0f}",
-    "IMPROVED_PCT": f"{(saved > 0).mean() * 100:.1f}",
+    "MEDIAN_SAVED": f"{wmedian(saved, w):.0f}",
+    "MEAN_SAVED": f"{wmean(saved, w):.0f}",
+    "IMPROVED_PCT": f"{wmean(saved > 0, w) * 100:.1f}",
     "BRONX_STATIC": f"{borough_pct['BRONX'][0]:.1f}",
     "BRONX_STAGED": f"{borough_pct['BRONX'][1]:.1f}",
     "N_HOURS": f"{len(layouts):,}",
