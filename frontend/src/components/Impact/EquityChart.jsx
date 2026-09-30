@@ -10,7 +10,9 @@ export default function EquityChart({ data }) {
   const quartiles = data.by_svi_quartile;
   // Reversed order: Q4 at top, Q1 at bottom
   const labels = ['Q1 (Least)', 'Q2', 'Q3', 'Q4 (Most)'];
-  const values = [quartiles.Q1?.median_saved_sec, quartiles.Q2?.median_saved_sec, quartiles.Q3?.median_saved_sec, quartiles.Q4?.median_saved_sec];
+  // Prefer the mean (the median is 0 for most slots); mock data only has the median.
+  const useMean = ['Q1', 'Q2', 'Q3', 'Q4'].some(q => quartiles[q]?.mean_saved_sec != null);
+  const values = ['Q1', 'Q2', 'Q3', 'Q4'].map(q => useMean ? quartiles[q]?.mean_saved_sec : quartiles[q]?.median_saved_sec);
   // Colors: lightest at bottom (Q1) to darkest at top (Q4)
   const colors = ['#90CAF9', '#64B5F6', '#1976D2', '#1565C0'];
 
@@ -40,7 +42,8 @@ export default function EquityChart({ data }) {
 
   return (
     <div style={{ flex: '0 0 25%', padding: '0 8px' }}>
-      <div style={{ fontSize: 11, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Equity Impact</div>
+      <div style={{ fontSize: 11, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 }}>Equity Impact</div>
+      <div style={{ fontSize: 9, color: '#666', marginBottom: 4 }}>{useMean ? 'Mean' : 'Median'} Time Saved by SVI Quartile</div>
       <Plot data={plotData} layout={layout} config={{ displayModeBar: false, staticPlot: true }} style={{ width: '100%' }} />
     </div>
   );

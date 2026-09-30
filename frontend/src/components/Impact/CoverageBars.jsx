@@ -7,7 +7,13 @@ export default function CoverageBars({ data, selectedBorough, selectedZone }) {
   const zoneData = selectedZone && data.by_zone?.[selectedZone];
   const staticPct = boroughData ? boroughData.static : data.pct_within_8min_static;
   const stagedPct = boroughData ? boroughData.staged : data.pct_within_8min_staged;
-  const medianSaved = zoneData ? zoneData.seconds_saved : (boroughData ? boroughData.median_saved_sec : data.median_seconds_saved);
+  // Prefer the mean: the median is 0 for most slots because most calls are in zones no staged unit improves.
+  // Mock data has no mean fields, so fall back to the median.
+  const scopeMean = boroughData ? boroughData.mean_saved_sec : data.mean_seconds_saved;
+  const useMean = !zoneData && scopeMean != null;
+  const savedSec = zoneData ? zoneData.seconds_saved
+    : useMean ? scopeMean
+    : (boroughData ? boroughData.median_saved_sec : data.median_seconds_saved);
   const scopeLabel = zoneData ? selectedZone : (boroughData ? selectedBorough : 'CITYWIDE');
 
   return (
@@ -49,9 +55,9 @@ export default function CoverageBars({ data, selectedBorough, selectedZone }) {
         background: '#1a2a3a', borderRadius: 8, padding: '12px 16px',
         textAlign: 'center',
       }}>
-        <div style={{ fontSize: 10, color: '#8899aa', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 4 }}>{zoneData ? 'Response Time Saved' : 'Median Response Time Saved'}</div>
+        <div style={{ fontSize: 10, color: '#8899aa', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 4 }}>{zoneData ? 'Response Time Saved' : useMean ? 'Mean Response Time Saved' : 'Median Response Time Saved'}</div>
         <div style={{ fontSize: 48, fontWeight: 800, color: '#42A5F5', fontFamily: "'DM Mono', monospace", lineHeight: 1.1 }}>
-          {formatSeconds(medianSaved)}
+          {formatSeconds(savedSec)}
         </div>
       </div>
     </div>

@@ -945,3 +945,4 @@ Replaces Model B. One travel model (`backend/models/coverage_model.py`) and one 
 - **Headline (08, K = 5):** 56.7% → 66.8% of calls within 8 min; K = 3 / 7 / 10: 64.6% / 70.9% / 74.4%. `pipeline/test_artifacts.py` requires `seconds_saved ≥ 0` on every row and staged ≥ static in every bin; the SVI equity check is informational.
 - **Finding:** placement is driven mostly by station-coverage gaps; demand moves it at the margin (11 distinct K = 5 layouts over 8,260 hours).
 - `/api/counterfactual` adds `mean_seconds_saved` (top level) and `mean_saved_sec` (per borough and SVI quartile), additive. Medians are 0 for most slots because most calls are in zones no staged unit improves; the frontend should show the mean.
+- Frontend (Impact tile, equity chart, AI briefing context) shows the mean seconds saved when the API provides it and falls back to the median for mock data; the AI prompt says "mean saved" or "median saved" to match.
