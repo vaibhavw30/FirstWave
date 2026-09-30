@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from '../App';
 
@@ -47,6 +47,10 @@ vi.mock('../hooks/useCounterfactual', () => ({
   }),
 }));
 
+vi.mock('../hooks/useStations', () => ({
+  useStations: () => ({ data: { type: 'FeatureCollection', features: [] }, isLoading: false }),
+}));
+
 vi.mock('../hooks/useZoneHistory', () => ({
   useZoneHistory: () => ({
     data: null,
@@ -64,6 +68,9 @@ function renderApp() {
     </QueryClientProvider>
   );
 }
+
+const ambulanceControl = () => within(screen.getByText('Ambulances').parentElement);
+const layersSection = () => within(screen.getByText('Layers').parentElement);
 
 describe('App', () => {
   it('renders the header', () => {
@@ -111,22 +118,20 @@ describe('App', () => {
 
   it('defaults to 5 ambulances', () => {
     renderApp();
-    expect(screen.getByText('5')).toBeInTheDocument();
+    expect(ambulanceControl().getByText('5')).toBeInTheDocument();
   });
 
   it('updates ambulance count on plus button click', () => {
     renderApp();
-    // Find the + button (second button in AmbulanceCount)
-    const ambulanceButtons = screen.getByText('5').parentElement.querySelectorAll('button');
-    fireEvent.click(ambulanceButtons[1]); // plus
-    expect(screen.getByText('6')).toBeInTheDocument();
+    fireEvent.click(ambulanceControl().getByText('+'));
+    expect(ambulanceControl().getByText('6')).toBeInTheDocument();
   });
 
   it('applies Friday Peak demo scenario', () => {
     renderApp();
     fireEvent.click(screen.getByText('Fri 8PM Peak'));
     expect(screen.getByText('8:00 PM')).toBeInTheDocument();
-    expect(screen.getByText('5')).toBeInTheDocument();
+    expect(ambulanceControl().getByText('5')).toBeInTheDocument();
   });
 
   it('applies Monday Quiet demo scenario', () => {
@@ -140,15 +145,14 @@ describe('App', () => {
     renderApp();
     fireEvent.click(screen.getByText('Storm'));
     expect(screen.getByText('6:00 PM')).toBeInTheDocument();
-    // 7 ambulances
-    expect(screen.getByText('7')).toBeInTheDocument();
+    expect(ambulanceControl().getByText('7')).toBeInTheDocument();
   });
 
   it('toggles layer visibility', () => {
     renderApp();
-    const checkboxes = screen.getAllByRole('checkbox');
-    // All 3 should be checked by default
-    checkboxes.forEach(cb => expect(cb).toBeChecked());
+    const checkboxes = layersSection().getAllByRole('checkbox');
+    // heatmap, staging, coverage on by default; EMS stations off
+    expect(checkboxes.map(cb => cb.checked)).toEqual([true, true, true, false]);
     // Uncheck heatmap
     fireEvent.click(checkboxes[0]);
     expect(checkboxes[0]).not.toBeChecked();

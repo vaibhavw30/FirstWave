@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
 import ImpactPanel from '../ImpactPanel';
 
 const mockData = {
@@ -20,6 +20,8 @@ const mockData = {
   histogram_staged_seconds: [210, 310, 380, 440, 290, 510, 335, 390],
 };
 
+const overlayProps = { overlays: { equity: false }, toggleOverlay: () => {} };
+
 describe('ImpactPanel', () => {
   it('shows loading state', () => {
     render(<ImpactPanel data={null} isLoading={true} />);
@@ -27,18 +29,26 @@ describe('ImpactPanel', () => {
   });
 
   it('renders child components when data is provided', () => {
-    render(<ImpactPanel data={mockData} isLoading={false} />);
+    render(<ImpactPanel data={mockData} isLoading={false} {...overlayProps} />);
     // CoverageBars renders "8-Minute Coverage"
     expect(screen.getByText('8-Minute Coverage')).toBeInTheDocument();
   });
 
   it('renders response time distribution', () => {
-    render(<ImpactPanel data={mockData} isLoading={false} />);
+    render(<ImpactPanel data={mockData} isLoading={false} {...overlayProps} />);
     expect(screen.getByText('Response Time Distribution')).toBeInTheDocument();
   });
 
-  it('renders equity impact section', () => {
-    render(<ImpactPanel data={mockData} isLoading={false} />);
-    expect(screen.getByText('Equity Impact (SVI)')).toBeInTheDocument();
+  it('renders the map overlays panel with the equity toggle', () => {
+    const toggleOverlay = vi.fn();
+    render(<ImpactPanel data={mockData} isLoading={false} overlays={{ equity: false }} toggleOverlay={toggleOverlay} />);
+    expect(screen.getByText('Map Overlays')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Toggle Equity (SVI) overlay' }));
+    expect(toggleOverlay).toHaveBeenCalledWith('equity');
+  });
+
+  it('shows the SVI legend when the equity overlay is on', () => {
+    render(<ImpactPanel data={mockData} isLoading={false} overlays={{ equity: true }} toggleOverlay={() => {}} />);
+    expect(screen.getByText('Vulnerability')).toBeInTheDocument();
   });
 });

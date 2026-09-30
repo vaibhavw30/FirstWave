@@ -21,6 +21,14 @@ vi.mock('react-map-gl', () => ({
   Marker: ({ children, longitude, latitude }) => (
     <div data-testid="marker" data-lng={longitude} data-lat={latitude}>{children}</div>
   ),
+  Popup: ({ children }) => <div data-testid="popup">{children}</div>,
+  // No map instance under jsdom; components that add layers imperatively skip when getMap is absent.
+  useMap: () => ({ current: undefined }),
+}));
+
+// The zip-code GeoJSON is downloaded from the internet at runtime; tests stay offline.
+vi.mock('../hooks/useNycZipGeoJSON', () => ({
+  useNycZipGeoJSON: () => ({ data: null }),
 }));
 
 // Filter out non-DOM props to avoid React warnings
