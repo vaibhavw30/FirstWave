@@ -229,14 +229,11 @@ if cs_path.exists():
         check("required columns present", has_cols,
               f"missing={req_cols - set(cs.columns)}" if not has_cols else "all present")
 
-        # staged > static (when not null) — allow some bins to be worse
-        # (e.g., geographically isolated areas like Staten Island)
+        # Staged units are extra to the stations, so no bin may get worse.
         valid = cs.dropna(subset=["pct_within_8min_static","pct_within_8min_staged"])
         if len(valid):
-            staged_better_count = (valid["pct_within_8min_staged"] >= valid["pct_within_8min_static"]).sum()
-            pct_better = staged_better_count / len(valid) * 100
-            check("staged >= static in majority of bins (>60%)", pct_better > 60,
-                  f"{pct_better:.0f}% of {len(valid)} bins")
+            worse = int((valid["pct_within_8min_staged"] < valid["pct_within_8min_static"]).sum())
+            check("staged >= static in every bin", worse == 0, f"{worse} of {len(valid)} bins worse")
 
             # Overall improvement check
             overall_improvement = (valid["pct_within_8min_staged"] - valid["pct_within_8min_static"]).mean()
@@ -279,11 +276,15 @@ if cr_path.exists():
               expected_quartiles.issubset(found_quartiles),
               f"found={found_quartiles}")
 
-        # Equity check: Q4 should have more seconds saved than Q1
+        # Staged units are extra to the stations, so no call may get slower.
+        negative = int((cr["seconds_saved"] < 0).sum())
+        check("seconds_saved >= 0 on every row", negative == 0, f"{negative:,} negative rows")
+
+        # Equity is reported, not gated (staging v2): Q4 vs Q1 median seconds saved.
         q1_med = cr[cr["svi_quartile"]=="Q1"]["seconds_saved"].median()
         q4_med = cr[cr["svi_quartile"]=="Q4"]["seconds_saved"].median()
-        check("equity: Q4 seconds_saved >= Q1", q4_med >= q1_med,
-              f"Q1={q1_med:.0f}s, Q4={q4_med:.0f}s")
+        print(f"  INFO  equity: median seconds saved Q1={q1_med:.0f}s, Q4={q4_med:.0f}s "
+              f"({'Q4 >= Q1' if q4_med >= q1_med else 'Q4 < Q1'})")
 
     except Exception as e:
         check("loads without error", False, str(e))

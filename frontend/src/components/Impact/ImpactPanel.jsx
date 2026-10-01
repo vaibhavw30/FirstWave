@@ -1,5 +1,6 @@
 import CoverageBars from './CoverageBars';
 import ResponseHistogram from './ResponseHistogram';
+import EquityChart from './EquityChart';
 import OverlayPanel from './OverlayPanel';
 
 export default function ImpactPanel({ data, isLoading, selectedBorough, selectedZone, overlays, toggleOverlay }) {
@@ -27,6 +28,7 @@ export default function ImpactPanel({ data, isLoading, selectedBorough, selected
     }}>
       <CoverageBars data={data} selectedBorough={selectedBorough} selectedZone={selectedZone} />
       <ResponseHistogram data={data} selectedBorough={selectedBorough} />
+      <EquityChart data={data} />
       <OverlayPanel overlays={overlays} toggleOverlay={toggleOverlay} />
     </div>
   );

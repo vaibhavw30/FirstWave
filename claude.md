@@ -455,6 +455,8 @@ run_name: xgboost_v1_dispatch_zones
 
 ## Model B — Weighted K-Means Staging Optimizer
 
+> **Superseded 2026-09-28 by Staging v2 (section at the end of this file). Kept for history.**
+
 ```python
 from sklearn.cluster import KMeans
 
@@ -925,3 +927,22 @@ Deployment gate: improvement `0.52%` vs no-lag (threshold 2%) — **FAILED; ship
 **Scale change:** `zone_baselines.zone_baseline_avg` is now a true mean hourly count (≈ 1/4 of the old month-summed values). Don't pair the old 21-feature `demand_model.pkl` with the new baselines.
 
 **Local pipeline:** `pipeline/.venv` (see `pipeline/requirements-dev.txt`); run 01→05, 07, 08, then `pipeline/test_artifacts.py`. 05 exits 1 and writes `pipeline/data/demand_model_candidate.pkl` if the gate fails. 08 takes ~10–30 min.
+
+---
+
+## Staging v2 — Coverage-Optimal Staging (added 2026-09-28)
+
+Spec: `docs/superpowers/specs/2026-09-28-coverage-staging-design.md` · Plan: `docs/superpowers/plans/2026-09-28-coverage-staging.md`
+
+Replaces Model B. One travel model (`backend/models/coverage_model.py`) and one optimizer (`backend/models/staging_optimizer.py`) serve `/api/staging`, `/api/counterfactual`, and pipeline scripts 07 and 08 (via `pipeline/fw_staging.py`). `backend/tests/test_staging_parity.py` checks that 08 and `/api/staging` place identical sites.
+
+- **Candidates:** the 31 zone centroids. The 30 stations in `data/ems_stations.json` are the fixed baseline; staged units are extra.
+- **Travel ratio:** `r(z, j) = min(station_drive_z, site_drive[z, j]) / station_drive_z`, drives from `drive_time_matrix.pkl` plus `intra_z = ½ × nearest-other-zone drive` (the matrix diagonal is 0 s).
+- **Zone level (API):** `after = dispatch + travel × wf × r`, `wf = 1 + 0.012 × precip + 0.002 × max(0, wind − 15)`; P(within 8 min) from a lognormal, CV 0.95.
+- **Call level (08):** `after = response − travel × (1 − r)`; calls with missing, ≤ 0, or > response travel are excluded.
+- **Objective:** maximise expected calls within 480 s, tie-break lower mean response; exact MILP (`scipy.optimize.milp`, HiGHS, `mip_rel_gap = 0`); ≥ 1 site per borough when K ≥ 5.
+- **API:** field names unchanged. Pins sit on zone centroids; `cluster_zones` lists only zones the pin improves (a pin can have none); `coverage_radius_m` (3500) is display-only. `/health` adds `artifacts.coverage_model`. If the matrix, stations, or zone_stats are missing, `/api/staging` returns mock with `X-Warning: coverage-model-missing` and `/api/counterfactual` falls back to the precomputed parquet.
+- **Headline (08, K = 5):** 56.7% → 66.8% of calls within 8 min; K = 3 / 7 / 10: 64.6% / 70.9% / 74.4%. `pipeline/test_artifacts.py` requires `seconds_saved ≥ 0` on every row and staged ≥ static in every bin; the SVI equity check is informational.
+- **Finding:** placement is driven mostly by station-coverage gaps; demand moves it at the margin (11 distinct K = 5 layouts over 8,260 hours).
+- `/api/counterfactual` adds `mean_seconds_saved` (top level) and `mean_saved_sec` (per borough and SVI quartile), additive. Medians are 0 for most slots because most calls are in zones no staged unit improves; the frontend should show the mean.
+- Frontend (Impact tile, equity chart, AI briefing context) shows the mean seconds saved when the API provides it and falls back to the median for mock data; the AI prompt says "mean saved" or "median saved" to match.

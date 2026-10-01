@@ -19,14 +19,14 @@ describe('CoverageBars', () => {
     expect(screen.getByText('8-Minute Coverage')).toBeInTheDocument();
   });
 
-  it('renders Static Stations label', () => {
+  it('renders Without FirstWave label', () => {
     render(<CoverageBars data={mockData} />);
-    expect(screen.getByText('Static Stations')).toBeInTheDocument();
+    expect(screen.getByText('Without FirstWave')).toBeInTheDocument();
   });
 
-  it('renders FirstWave Staged label', () => {
+  it('renders With FirstWave label', () => {
     render(<CoverageBars data={mockData} />);
-    expect(screen.getByText('FirstWave Staged')).toBeInTheDocument();
+    expect(screen.getByText('With FirstWave')).toBeInTheDocument();
   });
 
   it('displays static percentage', () => {
@@ -47,5 +47,35 @@ describe('CoverageBars', () => {
   it('displays formatted seconds saved (2 min 27 sec)', () => {
     render(<CoverageBars data={mockData} />);
     expect(screen.getByText('2 min 27 sec')).toBeInTheDocument();
+  });
+});
+
+describe('CoverageBars mean seconds saved', () => {
+  const withMean = { ...mockData, median_seconds_saved: 0, mean_seconds_saved: 98 };
+
+  it('shows the citywide mean when the API provides it', () => {
+    render(<CoverageBars data={withMean} />);
+    expect(screen.getByText('Mean Response Time Saved')).toBeInTheDocument();
+    expect(screen.getByText('1 min 38 sec')).toBeInTheDocument();
+  });
+
+  it('shows the borough mean when a borough is selected', () => {
+    const data = {
+      ...withMean,
+      by_borough: { BRONX: { static: 48.9, staged: 61.3, median_saved_sec: 0, mean_saved_sec: 125 } },
+    };
+    render(<CoverageBars data={data} selectedBorough="BRONX" />);
+    expect(screen.getByText('Mean Response Time Saved')).toBeInTheDocument();
+    expect(screen.getByText('2 min 5 sec')).toBeInTheDocument();
+  });
+
+  it('falls back to the borough median when the borough has no mean', () => {
+    const data = {
+      ...mockData,
+      by_borough: { BRONX: { static: 48.2, staged: 74.6, median_saved_sec: 213 } },
+    };
+    render(<CoverageBars data={data} selectedBorough="BRONX" />);
+    expect(screen.getByText('Median Response Time Saved')).toBeInTheDocument();
+    expect(screen.getByText('3 min 33 sec')).toBeInTheDocument();
   });
 });

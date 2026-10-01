@@ -1,5 +1,7 @@
 import datetime as dt
 import os
+import pathlib
+import shutil
 
 import joblib
 import numpy as np
@@ -8,7 +10,11 @@ import pytest
 import xgboost as xgb
 
 from fixtures_data import synthetic_count, synthetic_hourly_counts
+from models.coverage_model import weather_travel_factor
 from models.demand_forecaster import FEATURE_COLS, FEATURE_COLS_WITH_LAGS, VALID_ZONES
+from models.staging_optimizer import ZONE_CENTROIDS
+
+REAL_ARTIFACTS = pathlib.Path(__file__).resolve().parents[1] / "artifacts"
 
 
 def tiny_model(features):
@@ -20,6 +26,7 @@ def tiny_model(features):
 
 
 def _write_artifacts(art):
+    shutil.copy(REAL_ARTIFACTS / "drive_time_matrix.pkl", art / "drive_time_matrix.pkl")
     joblib.dump(tiny_model(FEATURE_COLS_WITH_LAGS), art / "demand_model.pkl")
     pd.DataFrame([
         {"INCIDENT_DISPATCH_AREA": z, "hour": h, "dayofweek": d, "zone_baseline_avg": 2.0}
@@ -237,3 +244,143 @@ def test_reload_clears_counterfactual_cache(api):
     assert _compute_dynamic_counterfactual.cache_info().currsize > 0
     assert client.post("/reload").status_code == 200
     assert _compute_dynamic_counterfactual.cache_info().currsize == 0
+
+
+def _staging_sites(body):
+    by_coords = {v: k for k, v in ZONE_CENTROIDS.items()}
+    return [by_coords[tuple(f["geometry"]["coordinates"])] for f in body["features"]]
+
+
+def test_health_reports_coverage_model(api):
+    client, _ = api
+    assert client.get("/health").json()["artifacts"]["coverage_model"] is True
+
+
+def test_staging_pins_are_optimizer_sites(api):
+    client, _ = api
+    body = client.get("/api/staging", params={
+        "hour": 20, "dow": 4, "month": 10, "date": "2025-10-10", "ambulances": 5}).json()
+    sites = _staging_sites(body)            # KeyError if a pin is not on a zone centroid
+    assert {s[0] for s in sites} == set("BKMQS")
+    served = [z for f in body["features"] for z in f["properties"]["cluster_zones"]]
+    assert len(served) == len(set(served))
+
+
+@pytest.mark.parametrize("weather", [
+    pytest.param({}, id="actual"),          # fixture weather: 0 mm, 7 km/h -> wf 1.0
+    pytest.param({"temperature": 5, "precipitation": 12, "windspeed": 40}, id="what-if"),
+])
+def test_counterfactual_uses_the_staging_sites_and_coverage_model(api, weather):
+    client, main = api
+    from routers.counterfactual import _compute_dynamic_counterfactual
+    _compute_dynamic_counterfactual.cache_clear()
+    params = {"hour": 20, "dow": 4, "month": 10, "date": "2025-10-10", "ambulances": 5, **weather}
+    sites = _staging_sites(client.get("/api/staging", params=params).json())
+    r = client.get("/api/counterfactual", params=params)
+    assert r.headers["X-Data-Source"] == "dynamic"
+    wf = weather_travel_factor(weather.get("precipitation", 0.0), weather.get("windspeed", 7.0))
+    expected = main.ARTIFACTS["coverage_model"].zone_times(sites, weather_factor=wf)
+    by_zone = r.json()["by_zone"]
+    for zone, (before, after) in expected.items():
+        assert by_zone[zone]["static_time"] == pytest.approx(round(before, 1))
+        assert by_zone[zone]["staged_time"] == pytest.approx(round(after, 1))
+        assert by_zone[zone]["staged_time"] <= by_zone[zone]["static_time"]
+
+
+def test_missing_coverage_model_serves_mock(api):
+    client, main = api
+    from routers.counterfactual import _compute_dynamic_counterfactual
+    from routers.staging import _cached_heatmap_and_staging
+    saved = main.ARTIFACTS["coverage_model"]
+    main.ARTIFACTS["coverage_model"] = None
+    _cached_heatmap_and_staging.cache_clear()
+    _compute_dynamic_counterfactual.cache_clear()
+    try:
+        params = {"hour": 21, "dow": 4, "month": 10, "date": "2025-10-10"}
+        r = client.get("/api/staging", params=params)
+        assert r.headers["X-Data-Source"] == "mock"
+        assert r.headers["X-Warning"] == "coverage-model-missing"
+        r = client.get("/api/counterfactual", params=params)
+        assert r.headers["X-Data-Source"] == "mock"
+    finally:
+        main.ARTIFACTS["coverage_model"] = saved
+
+
+def test_reload_rebuilds_coverage_model(api):
+    client, main = api
+    main.ARTIFACTS["coverage_model"] = None
+    body = client.post("/reload").json()
+    assert body["artifacts"]["coverage_model"] is True
+    assert main.ARTIFACTS["coverage_model"] is not None
+
+
+# --- mean seconds saved (additive next to the frozen medians) -------------------------------
+
+BOROUGHS = ["BRONX", "BROOKLYN", "MANHATTAN", "QUEENS", "RICHMOND / STATEN ISLAND"]
+
+
+def test_counterfactual_dynamic_reports_mean_seconds_saved_at_every_level(api):
+    client, _ = api
+    from routers.counterfactual import _compute_dynamic_counterfactual
+    _compute_dynamic_counterfactual.cache_clear()
+    r = client.get("/api/counterfactual", params={
+        "hour": 20, "dow": 4, "month": 10, "date": "2025-10-10", "ambulances": 5})
+    assert r.headers["X-Data-Source"] == "dynamic"
+    body = r.json()
+    assert "median_seconds_saved" in body                     # frozen field still there
+    assert body["mean_seconds_saved"] > 0
+    assert body["mean_seconds_saved"] >= body["median_seconds_saved"]
+    assert set(body["by_borough"]) <= set(BOROUGHS) and body["by_borough"]
+    for b in body["by_borough"].values():
+        assert "median_saved_sec" in b and b["mean_saved_sec"] >= 0
+    assert set(body["by_svi_quartile"]) == {"Q1", "Q2", "Q3", "Q4"}
+    for q in body["by_svi_quartile"].values():
+        assert "median_saved_sec" in q and q["mean_saved_sec"] >= 0
+
+
+def test_counterfactual_dynamic_top_level_mean_is_demand_weighted_zone_mean(api):
+    client, _ = api
+    from routers.counterfactual import _compute_dynamic_counterfactual
+    _compute_dynamic_counterfactual.cache_clear()
+    body = client.get("/api/counterfactual", params={
+        "hour": 20, "dow": 4, "month": 10, "date": "2025-10-10", "ambulances": 5}).json()
+    saved = [z["seconds_saved"] for z in body["by_zone"].values()]
+    # By-zone values are unweighted-rounded, so the weighted mean must sit inside their range.
+    assert min(saved) <= body["mean_seconds_saved"] <= max(saved)
+
+
+def _precomputed_frames():
+    summary = pd.DataFrame([{
+        "hour": 20, "dayofweek": 4, "median_seconds_saved": 0.0,
+        "pct_within_8min_static": 60.0, "pct_within_8min_staged": 70.0, "n_incidents": 6}])
+    raw = pd.DataFrame({
+        "hour": [20] * 6 + [3], "dayofweek": [4] * 6 + [0],
+        "borough": ["BRONX", "BRONX", "BRONX", "QUEENS", "QUEENS", "QUEENS", "BRONX"],
+        "svi_quartile": ["Q4", "Q4", "Q4", "Q1", "Q1", "Q1", "Q4"],
+        "seconds_saved": [0.0, 0.0, 300.0, 0.0, 60.0, 0.0, 999.0],
+        "baseline_within_8min": [0, 1, 0, 1, 1, 1, 0], "staged_within_8min": [1, 1, 1, 1, 1, 1, 0]})
+    return summary, raw
+
+
+@pytest.fixture
+def precomputed_only(api):
+    """Force the parquet fallback: no coverage model, so the dynamic path is skipped."""
+    client, main = api
+    keys = ("coverage_model", "counterfactual_summary", "counterfactual_raw")
+    saved = {k: main.ARTIFACTS.get(k) for k in keys}
+    summary, raw = _precomputed_frames()
+    main.ARTIFACTS.update(coverage_model=None, counterfactual_summary=summary, counterfactual_raw=raw)
+    yield client
+    main.ARTIFACTS.update(saved)
+
+
+def test_counterfactual_precomputed_reports_mean_seconds_saved(precomputed_only):
+    r = precomputed_only.get("/api/counterfactual", params={"hour": 20, "dow": 4, "date": "2025-10-10"})
+    assert r.headers["X-Data-Source"] == "parquet"
+    body = r.json()
+    assert body["median_seconds_saved"] == 0.0                # unchanged
+    assert body["mean_seconds_saved"] == pytest.approx(60.0)  # (0+0+300+0+60+0)/6, the other slot excluded
+    assert body["by_borough"]["BRONX"]["mean_saved_sec"] == pytest.approx(100.0)
+    assert body["by_borough"]["QUEENS"]["mean_saved_sec"] == pytest.approx(20.0)
+    assert body["by_svi_quartile"]["Q4"]["mean_saved_sec"] == pytest.approx(100.0)   # the hour-3 row (999) is another slot
+    assert body["by_svi_quartile"]["Q1"]["mean_saved_sec"] == pytest.approx(20.0)

@@ -1,6 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import MapContainer from '../MapContainer';
+
+vi.mock('../../../hooks/useStations', () => ({
+  useStations: () => ({ data: { type: 'FeatureCollection', features: [] }, isLoading: false }),
+}));
 
 const mockHeatmapData = {
   type: 'FeatureCollection',
@@ -29,6 +33,7 @@ describe('MapContainer', () => {
         layerVisibility={{ heatmap: true, staging: true, coverage: true }}
         selectedZone={null}
         onZoneClick={() => {}}
+        overlays={{ equity: false }}
       />
     );
     expect(screen.getByTestId('map')).toBeInTheDocument();
@@ -42,6 +47,7 @@ describe('MapContainer', () => {
         layerVisibility={{ heatmap: true, staging: true, coverage: true }}
         selectedZone={null}
         onZoneClick={() => {}}
+        overlays={{ equity: false }}
       />
     );
     expect(screen.getByTestId('source-zones')).toBeInTheDocument();
@@ -55,6 +61,7 @@ describe('MapContainer', () => {
         layerVisibility={{ heatmap: false, staging: true, coverage: true }}
         selectedZone={null}
         onZoneClick={() => {}}
+        overlays={{ equity: false }}
       />
     );
     expect(screen.queryByTestId('source-zones')).not.toBeInTheDocument();
@@ -68,8 +75,9 @@ describe('MapContainer', () => {
         layerVisibility={{ heatmap: true, staging: true, coverage: true }}
         selectedZone={null}
         onZoneClick={() => {}}
+        overlays={{ equity: false }}
       />
     );
-    expect(screen.getByTestId('marker')).toBeInTheDocument();
+    expect(screen.getByText('Z1')).toBeInTheDocument();
   });
 });

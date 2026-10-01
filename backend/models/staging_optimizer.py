@@ -1,5 +1,14 @@
+"""Coverage-optimal staging (staging v2).
+
+Chooses K zone centroids that maximise expected calls reached within 8 minutes,
+tie-broken by lower demand-weighted mean response, solved exactly as a MILP
+(scipy.optimize.milp / HiGHS). With K >= 5 every borough gets at least one site.
+"""
 import numpy as np
-from sklearn.cluster import KMeans
+from scipy.optimize import Bounds, LinearConstraint, milp
+from scipy.sparse import coo_matrix
+
+from models.coverage_model import pct_within
 
 ZONE_BOROUGH_PREFIX = {
     'B': 'BRONX',
@@ -48,107 +57,96 @@ ZONE_CENTROIDS = {
     'S3': (-74.1915, 40.5301),
 }
 
-COVERAGE_RADIUS_M = 3500
+COVERAGE_RADIUS_M = 3500   # display only; placement uses the drive-time matrix
+MIN_BOROUGH_K = 5          # at or above this K, every borough gets a site
+_TIE_EPS = 1e-6            # weight of the mean-response tie-break (< 1e-6 calls)
 
 
 class StagingOptimizer:
-    def _borough_of(self, zone: str) -> str:
-        return ZONE_BOROUGH_PREFIX.get(zone[0], 'UNKNOWN')
+    def __init__(self, coverage):
+        self.coverage = coverage
+        n = len(coverage.zones)
+        ns = n + 1                                   # column n = "stations only"
+        self._n = n
+        nv = n + n * ns                              # y (n) then x (n x ns), row-major
+        self._nv = nv
 
-    def _demand_weighted_centroid(self, zones: list, predicted_counts: dict):
-        """Compute demand-weighted centroid for a list of zones. Returns (lat, lon)."""
-        weights = np.array([max(predicted_counts.get(z, 0.01), 0.01) for z in zones])
-        coords = np.array([[ZONE_CENTROIDS[z][1], ZONE_CENTROIDS[z][0]] for z in zones])
-        total_w = weights.sum()
-        lat = np.dot(weights, coords[:, 0]) / total_w
-        lon = np.dot(weights, coords[:, 1]) / total_w
-        return float(lat), float(lon)
+        def xi(z, j):
+            return n + z * ns + j
 
-    def _build_result(self, idx, lat, lon, cluster_zones, predicted_counts):
-        demand_coverage = sum(predicted_counts.get(z, 0) for z in cluster_zones)
-        return {
-            "staging_index": idx,
-            "lat": lat,
-            "lon": lon,
-            "coverage_radius_m": COVERAGE_RADIUS_M,
-            "predicted_demand_coverage": round(float(demand_coverage), 2),
-            "cluster_zones": sorted(cluster_zones),
-            "zone_count": len(cluster_zones),
-        }
+        rows, cols, vals, lb, ub = [], [], [], [], []
+        r = 0
+        for z in range(n):                           # each zone served exactly once
+            for j in range(ns):
+                rows.append(r); cols.append(xi(z, j)); vals.append(1.0)
+            lb.append(1); ub.append(1); r += 1
+        for z in range(n):                           # only open sites can serve
+            for j in range(n):
+                rows += [r, r]; cols += [xi(z, j), j]; vals += [1.0, -1.0]
+                lb.append(-np.inf); ub.append(0); r += 1
+        self._base = LinearConstraint(coo_matrix((vals, (rows, cols)), shape=(r, nv)).tocsr(), lb, ub)
+        self._count_row = np.concatenate([np.ones(n), np.zeros(n * ns)])
+        self._borough_rows = []
+        for prefix in ZONE_BOROUGH_PREFIX:
+            row = np.zeros(nv)
+            row[[i for i, z in enumerate(coverage.zones) if z[0] == prefix]] = 1
+            if row.any():
+                self._borough_rows.append(row)
 
-    def compute_staging(self, predicted_counts: dict, K: int) -> list:
-        """
-        Borough-fair staging: guarantees each borough gets at least 1 staging
-        point before any borough gets 2+, then extras split by demand.
-        """
-        # Group zones by borough
-        borough_zones = {}
-        for z in predicted_counts:
-            b = self._borough_of(z)
-            borough_zones.setdefault(b, []).append(z)
+    def _probabilities(self, weather_factor: float):
+        """(T, P): mean response and P(within 8 min) for every zone x (site | stations only)."""
+        cm = self.coverage
+        ratio = np.hstack([cm.ratio, np.ones((self._n, 1))])
+        T = cm.dispatch[:, None] + cm.travel[:, None] * weather_factor * ratio
+        return T, pct_within(T)
 
-        borough_demand = {
-            b: sum(predicted_counts.get(z, 0) for z in zs)
-            for b, zs in borough_zones.items()
-        }
-        # Boroughs ranked by demand descending
-        ranked_boroughs = sorted(borough_demand, key=borough_demand.get, reverse=True)
-        num_boroughs = len(ranked_boroughs)
+    def _demand(self, predicted_counts: dict) -> np.ndarray:
+        return np.array([max(float(predicted_counts.get(z, 0.0)), 0.01) for z in self.coverage.zones])
 
-        if K < num_boroughs:
-            # Fewer ambulances than boroughs: pick top K boroughs by demand
-            selected = ranked_boroughs[:K]
-            results = []
-            for i, b in enumerate(selected):
-                lat, lon = self._demand_weighted_centroid(borough_zones[b], predicted_counts)
-                results.append(self._build_result(i, lat, lon, borough_zones[b], predicted_counts))
-        else:
-            # Phase 1: one staging point per borough (guaranteed)
-            results = []
-            borough_clusters = {}  # borough -> number of clusters allocated
-            for b in ranked_boroughs:
-                borough_clusters[b] = 1
+    def expected_within(self, sites, predicted_counts: dict, weather_factor: float = 1.0) -> float:
+        """Expected calls reached within 8 min with these sites open (the objective)."""
+        _, P = self._probabilities(weather_factor)
+        cols = [self.coverage.index[s] for s in sites] + [self._n]
+        return float((self._demand(predicted_counts) * P[:, cols].max(axis=1)).sum())
 
-            # Phase 2: distribute K - num_boroughs extras by demand
-            extras = K - num_boroughs
-            for _ in range(extras):
-                # Give next extra to borough with highest demand-per-cluster ratio
-                best_b = max(
-                    ranked_boroughs,
-                    key=lambda b: borough_demand[b] / borough_clusters[b]
-                )
-                borough_clusters[best_b] += 1
+    def _solve(self, d: np.ndarray, K: int, weather_factor: float) -> list:
+        T, P = self._probabilities(weather_factor)
+        c_x = -(d[:, None] * P) + _TIE_EPS * d[:, None] * T / (d.sum() * 7200)
+        c = np.concatenate([np.zeros(self._n), c_x.ravel()])
+        constraints = [self._base, LinearConstraint(self._count_row[None, :], K, K)]
+        if K >= MIN_BOROUGH_K and self._borough_rows:
+            constraints.append(LinearConstraint(np.array(self._borough_rows), 1, np.inf))
+        res = milp(c, constraints=constraints, integrality=np.ones(self._nv),
+                   bounds=Bounds(0, 1), options={"mip_rel_gap": 0})
+        if not res.success:
+            raise RuntimeError(f"staging MILP failed: {res.message}")
+        return [self.coverage.zones[j] for j in np.flatnonzero(res.x[:self._n] > 0.5)]
 
-            # Build staging points: for boroughs with 1 cluster use weighted centroid,
-            # for boroughs with >1 cluster run K-Means within that borough
-            idx = 0
-            for b in ranked_boroughs:
-                n_clusters = borough_clusters[b]
-                zones_in_borough = borough_zones[b]
+    def compute_staging(self, predicted_counts: dict, K: int, weather_factor: float = 1.0) -> list:
+        if not 1 <= K <= self._n:
+            raise ValueError(f"K must be between 1 and {self._n}, got {K}")
+        sites = self._solve(self._demand(predicted_counts), K, weather_factor)
+        return self._describe(sites, predicted_counts)
 
-                if n_clusters == 1 or len(zones_in_borough) <= 1:
-                    lat, lon = self._demand_weighted_centroid(zones_in_borough, predicted_counts)
-                    results.append(self._build_result(idx, lat, lon, zones_in_borough, predicted_counts))
-                    idx += 1
-                else:
-                    # K-Means within this borough
-                    n_clusters = min(n_clusters, len(zones_in_borough))
-                    weights = np.array([max(predicted_counts.get(z, 0.01), 0.01) for z in zones_in_borough])
-                    coords = np.array([[ZONE_CENTROIDS[z][1], ZONE_CENTROIDS[z][0]] for z in zones_in_borough])
-
-                    km = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-                    km.fit(coords, sample_weight=weights)
-
-                    for k in range(n_clusters):
-                        cluster_zone_indices = [i for i, lbl in enumerate(km.labels_) if lbl == k]
-                        cluster_zones = [zones_in_borough[i] for i in cluster_zone_indices]
-                        lat, lon = km.cluster_centers_[k]
-                        results.append(self._build_result(idx, lat, lon, cluster_zones, predicted_counts))
-                        idx += 1
-
-        # Sort by demand coverage descending
-        results.sort(key=lambda x: x["predicted_demand_coverage"], reverse=True)
-        for i, r in enumerate(results):
-            r["staging_index"] = i
-
+    def _describe(self, sites: list, predicted_counts: dict) -> list:
+        """Pins in the API's shape; each zone is listed under the open site that improves it most."""
+        cm = self.coverage
+        r = cm.ratio[:, [cm.index[s] for s in sites]]          # [zone, open site]
+        best = r.argmin(axis=1)
+        results = []
+        for k, site in enumerate(sites):
+            served = [z for i, z in enumerate(cm.zones) if best[i] == k and r[i, k] < 1.0]
+            lon, lat = ZONE_CENTROIDS[site]
+            results.append({
+                "zone": site,
+                "lat": lat,
+                "lon": lon,
+                "coverage_radius_m": COVERAGE_RADIUS_M,
+                "predicted_demand_coverage": round(float(sum(predicted_counts.get(z, 0) for z in served)), 2),
+                "cluster_zones": sorted(served),
+                "zone_count": len(served),
+            })
+        results.sort(key=lambda p: (-p["predicted_demand_coverage"], p["zone"]))
+        for i, p in enumerate(results):
+            p["staging_index"] = i
         return results

@@ -17,7 +17,7 @@ class ContextModel(BaseModel):
     weather: str = "none"
     ambulances: int = 5
     top_zones: list = []   # [{"zone": str, "borough": str, "count": float}]
-    coverage: dict = {}    # {"pct_static": float, "pct_staged": float, "median_saved_sec": float}
+    coverage: dict = {}    # {"pct_static": float, "pct_staged": float, "median_saved_sec": float, "mean_saved_sec": float (optional)}
 
 
 class AiRequest(BaseModel):
@@ -46,7 +46,9 @@ def _build_context_str(ctx: ContextModel) -> str:
     cov = ctx.coverage or {}
     pct_static = cov.get("pct_static", "N/A")
     pct_staged = cov.get("pct_staged", "N/A")
-    saved = cov.get("median_saved_sec", "N/A")
+    # Prefer the mean: the median is 0 for most slots under coverage-optimal staging.
+    saved_stat = "mean" if cov.get("mean_saved_sec") is not None else "median"
+    saved = cov.get(f"{saved_stat}_saved_sec", "N/A")
     if isinstance(pct_static, float): pct_static = f"{pct_static:.1f}"
     if isinstance(pct_staged, float): pct_staged = f"{pct_staged:.1f}"
     if isinstance(saved, float): saved = f"{saved:.0f}"
@@ -55,7 +57,7 @@ def _build_context_str(ctx: ContextModel) -> str:
         f"Time: {day_label} {hour_label} | Weather: {ctx.weather} | Ambulances: {ctx.ambulances}\n"
         f"Top predicted zones: {zones_str}\n"
         f"Coverage without staging: {pct_static}% within 8 min\n"
-        f"Coverage WITH FirstWave staging: {pct_staged}% within 8 min ({saved}s median saved)"
+        f"Coverage WITH FirstWave staging: {pct_staged}% within 8 min ({saved}s {saved_stat} saved)"
     )
 
 

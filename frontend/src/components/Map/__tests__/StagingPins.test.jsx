@@ -30,10 +30,10 @@ describe('StagingPins', () => {
     expect(container.innerHTML).toBe('');
   });
 
-  it('renders markers when showPins is true', () => {
-    render(<StagingPins data={mockStagingData} showPins={true} showCoverage={false} />);
+  it('renders one pill per site plus one dot per ambulance when showPins is true', () => {
+    render(<StagingPins data={mockStagingData} showPins={true} showCoverage={false} ambulanceCount={5} />);
     const markers = screen.getAllByTestId('marker');
-    expect(markers.length).toBe(2);
+    expect(markers.length).toBe(2 + 5);
   });
 
   it('does not render markers when showPins is false', () => {
@@ -53,12 +53,12 @@ describe('StagingPins', () => {
     expect(screen.queryByTestId('source-coverage-circles')).not.toBeInTheDocument();
   });
 
-  it('renders ambulance emoji inside markers', () => {
-    render(<StagingPins data={mockStagingData} showPins={true} showCoverage={false} />);
-    const markers = screen.getAllByTestId('marker');
-    markers.forEach((m) => {
-      expect(m.textContent).toContain('🚑');
-    });
+  it('labels each pill Z<n> with its share of ambulances, weighted by demand', () => {
+    render(<StagingPins data={mockStagingData} showPins={true} showCoverage={false} ambulanceCount={5} />);
+    const [z1, z2] = screen.getAllByTestId('marker');
+    // 1 each, then the 3 extras split by demand (31.2 vs 25.0) with largest remainder: 3 and 2
+    expect(z1.textContent).toBe('Z13');
+    expect(z2.textContent).toBe('Z22');
   });
 
   it('passes correct coordinates to markers', () => {

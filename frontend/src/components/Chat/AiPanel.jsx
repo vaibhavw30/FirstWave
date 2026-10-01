@@ -36,6 +36,9 @@ export function buildContext(heatmapData, counterfactualData, controls) {
     coverage.pct_static = counterfactualData.pct_within_8min_static;
     coverage.pct_staged = counterfactualData.pct_within_8min_staged;
     coverage.median_saved_sec = counterfactualData.median_seconds_saved;
+    if (counterfactualData.mean_seconds_saved != null) {
+      coverage.mean_saved_sec = counterfactualData.mean_seconds_saved;
+    }
   }
   return {
     hour: controls.hour,

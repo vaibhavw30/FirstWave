@@ -36,25 +36,26 @@ Emergency demand is highly predictable — Friday evenings in the Bronx, summer 
 
 ## Key Results
 
-Simulated on **25,200 Priority 1–2 calls from 2025**, a year the model never trained on (up to 150 calls for each of the 168 hour-of-week slots):
+Simulated on **25,200 Priority 1–2 calls from 2025**, a year the model never trained on (up to 150 calls sampled for each of the 168 hour-of-week slots, with results weighted back to each slot's real 2025 call volume), with **5 staged ambulances** (the dashboard default) placed from each call's own hour:
 
 | Metric | Without FirstWave | With FirstWave |
 |---|---|---|
-| Calls reached within 8 minutes | 57.8% | **87.8%** |
-| Median response time saved | — | **4 min 16 sec** |
-| Bronx (worst borough) within 8 minutes | 49.9% | **97.0%** |
-| Most vulnerable neighborhoods (SVI Q4), median saved | — | **349 seconds** |
+| Calls reached within 8 minutes | 56.7% | **66.8%** |
+| Calls whose zone gets a closer unit | — | **30.5%** |
+| Response time saved, mean (median) | — | **81 s** (0 s) |
+| Bronx within 8 minutes | 48.9% | **61.3%** |
 
-The equity finding: the most vulnerable quartile saves the most, a median of 349 s vs 192 s in the least vulnerable quartile. High-vulnerability zones overlap with the highest-demand zones, which is where staged units go.
+**How to read these numbers.** "Without" is each call's real recorded response time (dispatch plus travel). "With" keeps the same dispatch time and shortens only the travel part, by how much closer the nearest staged ambulance is than the nearest station on the road network. Staged ambulances are extra to the stations, so no call gets slower. The median saving is 0 s because only about 30.5% of calls are in a zone that a staged unit reaches faster than the nearest station, so most calls are unchanged; the within-8-minute share and the mean are the meaningful measures.
 
-**How to read these numbers.** "Without" is each call's real recorded response time (dispatch plus travel). "With" is the road-network drive time from the nearest of 10 staging points placed from that hour's forecast.
+**Where the ambulances go.** Sites are chosen to reach as many predicted calls as possible within 8 minutes. They mostly fill the biggest gaps in station coverage; the hour's forecast adjusts them at the margin. Across 8,260 simulated hours there were 11 distinct 5-site layouts, and the most common one (B2, K3, M3, Q6, S1) was used in 54% of hours.
 
-It's an upper bound on what placement alone could buy:
-- It assumes the staged units are always free.
-- It leaves out dispatch delay.
-- It scores a call inside a staging zone at 0 s drive time. That's 36% of calls; excluding them, 80.8% are reached within 8 minutes.
+**Equity.** Seconds saved by social-vulnerability quartile, mean (median): Q1 95 s (0), Q2 97 s (0), Q3 32 s (0), Q4 101 s (0). The gain is not monotonic in vulnerability: the most vulnerable quartile (Q4) gains the most on average, but Q3 gains far less than Q1–Q2, because placement follows station-coverage gaps, not vulnerability.
 
-Staten Island gets worse (62.7% → 42.0%) because 10 demand-weighted points rarely land there. Method: `pipeline/08_counterfactual_precompute.py`.
+**More ambulances.** Same calls, sites re-placed each hour: 3 → 64.6%, 5 → 66.8%, 7 → 70.9%, 10 → 74.4% within 8 minutes.
+
+> **Assumptions.** (1) Drive-time ratios come from free-flow road times (OSMnx). They scale each call's real travel time, so real traffic is kept, but the ratio itself ignores congestion. (2) "Without" assumes the nearest station's unit would have responded. (3) Staged units are always free (no queueing). (4) Travel inside a zone is estimated as half the drive from the nearest neighbouring zone centre.
+
+Method: `pipeline/08_counterfactual_precompute.py`.
 
 ---
 
@@ -68,16 +69,17 @@ Weather defaults to **Actual**, the replayed hour's recorded weather. Clear, Lig
 ### Watch the Wave ▶
 Hit the play button next to the hour slider and watch the selected day's demand animate hour by hour at 1.5-second intervals. Hotspots shift through the day and total demand swings more than 2× (95 predicted calls citywide on Monday 4AM vs 220 on Friday 8PM). That's the core argument: demand is predictable, so staging should be proactive.
 
-### Borough-Fair Staging Optimizer
-A two-phase weighted K-Means algorithm places K ambulances at the mathematical center of predicted demand:
-- **Phase 1:** Guarantees at least one staging point per borough (equity constraint)
-- **Phase 2:** Distributes remaining ambulances proportionally to demand
-- Each staging location covers a ~3,500m radius (8-minute urban drive at 25 km/h)
+### Coverage-Optimal Staging
+Places K ambulances at zone centres to reach as many predicted calls as possible within 8 minutes:
+- Uses the road-network drive-time matrix and the 30 fixed EMS stations: a staged unit only helps a zone where it is closer than that zone's nearest station
+- Solved exactly (a mixed-integer program), not approximated; ties go to the lower average response time
+- With 5 or more ambulances, every borough gets at least one (equity constraint)
+- Each pin's tooltip lists the zones it actually improves; the circle is a fixed 3,500 m display radius
 
 ### Counterfactual Impact Engine
 The impact panel answers *how much faster would we have gotten there?* for the selected hour and ambulance count. For each zone:
 - **Before** is the zone's historical average dispatch plus travel time.
-- **After** is the same dispatch time plus the drive from the nearest staging point.
+- **After** keeps the same dispatch time and scales travel by how much closer the nearest staging site is than the nearest station.
 
 Travel is slowed in bad weather by a factor of `1.0 + 0.012 × precip + 0.002 × max(0, wind − 15)`. The headline [Key Results](#key-results) come from a separate call-by-call simulation (see [Counterfactual Engine](#counterfactual-engine)).
 
@@ -87,7 +89,7 @@ A GPT-4o-mini-powered panel in the top-right corner of the dashboard. Two modes:
 - **Interactive chat:** Describe any scenario in natural language. "Yankees game Friday night?" The AI responds and sets the hour and weekday for you; the replay date moves to that weekday in the same week. If the map changes, an **↩ Undo** button appears in the chat to revert.
 
 ### Equity / SVI Layer
-A ZIP-level Social Vulnerability Index overlay in a purple gradient (transparent → dark purple for SVI 0→1). The impact panel breaks down response time savings by SVI quartile, proving the algorithm is fair as well as fast.
+A ZIP-level Social Vulnerability Index overlay in a purple gradient (transparent → dark purple for SVI 0→1). The impact panel breaks down estimated time savings by SVI quartile, so dispatchers can see who benefits; placement follows station-coverage gaps rather than vulnerability, so the gain is uneven across quartiles.
 
 ### FDNY Stations Overlay
 Toggle on 30 FDNY EMS station locations as grey markers on the map. Hover for station name, borough, and address. The spatial gap between fixed station locations and where demand actually concentrates is immediately visible.
@@ -119,8 +121,8 @@ Click any zone on the map to open a detail panel with its 24-hour demand curve, 
          v
 [ FastAPI Backend ]  — artifacts loaded at startup, hot-reloadable
     GET  /api/heatmap           31-zone forecast GeoJSON (+ actual calls when replaying a date)
-    GET  /api/staging           K borough-fair staging locations GeoJSON
-    GET  /api/counterfactual    coverage + time saved + by_borough + by_svi + by_zone
+    GET  /api/staging           K coverage-optimal staging locations GeoJSON
+    GET  /api/counterfactual    coverage + time saved (median and mean) + by_borough + by_svi + by_zone
     GET  /api/historical/:zone  per-zone 24-hour demand + response stats
     GET  /api/breakdown         borough-level performance breakdown
     GET  /api/stations          FDNY EMS station locations GeoJSON
@@ -131,7 +133,7 @@ Click any zone on the map to open a detail panel with its 24-hour demand curve, 
          v
 [ React 19 + Mapbox GL JS 3.18 Dashboard ]
     Choropleth demand heatmap (31 dispatch zones, teal → red)
-    Staging pins with 8-min coverage circles (3,500m radius)
+    Staging pins with fixed 3,500 m display circles
     Watch the Wave animation (24-hour playback, 1.5s/step)
     FDNY stations overlay (grey markers, hover tooltips)
     Equity / SVI ZIP-level overlay (purple gradient)
@@ -188,14 +190,17 @@ These are exact TreeSHAP values over all 271,560 zone-hours in 2025. The model p
 
 `zone_baseline_avg` and `roll_7d_same_hour` are highly correlated (r = 0.94), so how credit is split between them is somewhat arbitrary; read them together as "how busy this zone normally is." Regenerate the chart with `python pipeline/shap_importance.py`.
 
-### Model B — Borough-Fair Staging Optimizer
+### Model B — Coverage-Optimal Staging Optimizer
 
-Two-phase weighted K-Means:
-1. One staging point guaranteed per borough (equity constraint), placed at demand-weighted centroid
-2. Remaining K−5 points allocated one-at-a-time to the borough with the highest `demand / current_clusters` ratio
-3. Within each borough: K-Means with demand weights when N > 1 cluster
+`backend/models/staging_optimizer.py`, shared by `/api/staging`, `/api/counterfactual`, and pipeline scripts 07–08. The travel model is `backend/models/coverage_model.py`.
 
-**Coverage radius:** 3,500m (~8-minute urban drive at 25 km/h)
+For zone z and candidate site j (the 31 zone centres), the travel multiplier is `r(z, j) = min(station_drive(z), site_drive(z, j)) / station_drive(z)`. Both drives come from the OSMnx matrix plus a within-zone term: half the drive from the nearest neighbouring zone centre. A zone's expected response is `dispatch + travel × weather × r`, and its chance of an 8-minute response comes from a lognormal (CV 0.95) around that mean.
+
+The optimizer picks K sites that maximise predicted calls reached within 8 minutes (tie-break: lower mean response), with at least one site per borough when K ≥ 5. It is solved exactly as a mixed-integer program with SciPy's HiGHS solver in a few milliseconds, and tests check it against brute force for K = 1–4.
+
+Because the stations are part of the model, the best sites are set mostly by gaps in station coverage; the hour's forecast moves them only at the margin.
+
+**Display radius:** 3,500 m (map circle only; placement uses drive times)
 
 ### Counterfactual Engine
 
@@ -203,14 +208,19 @@ Two versions answer "how much faster?":
 
 **Call-level simulation** (`pipeline/08_counterfactual_precompute.py`). This produces the [Key Results](#key-results).
 1. Take 2025 Priority 1–2 calls with valid response times, up to 150 per (hour, weekday) slot.
-2. For each call's actual hour, forecast all 31 zones using that hour's real weather and place 10 staging points with weighted K-Means. Each point snaps to its nearest zone centroid.
-3. **Before** is the call's recorded response time. **After** is the OSMnx drive time from the nearest staging zone to the call's zone.
+2. For each call's actual hour, forecast all 31 zones using that hour's real weather and place 5 staging sites with the same optimizer and inputs as the dashboard (`backend/tests/test_staging_parity.py` keeps them identical).
+3. **Before** is the call's recorded response time. **After** keeps its dispatch time and scales its recorded travel time by `r(zone, nearest open site)`. Calls with a missing or invalid travel time (under 0.1%) are left out.
 4. Results are saved per call (`counterfactual_raw`) and per slot (`counterfactual_summary`, 168 rows).
+5. The script also logs results for 3, 7, and 10 ambulances.
 
-**Live estimate** (`/api/counterfactual`, what the dashboard shows). This uses the same forecast and borough-fair staging as the map, for the selected date, hour, weather, and ambulance count. Per zone:
+**Live estimate** (`/api/counterfactual`, what the dashboard shows). This uses the same forecast, optimizer, and travel model as the map, for the selected date, hour, weather, and ambulance count. Per zone:
 - **Before** = average dispatch + weather-adjusted average travel.
-- **After** = the same dispatch + drive from the nearest staging point. That's the OSMnx time when a zone centroid lies within 2 km of the point, otherwise straight-line at 25 km/h. It's floored at 2 minutes and never worse than before.
+- **After** = the same dispatch + that travel × `r(zone, nearest open site)`.
 - **% within 8 minutes** comes from a lognormal CDF (CV = 0.95) around each zone's mean. Results are demand-weighted by borough, SVI quartile, and zone.
+
+The live estimate works from zone averages and the lognormal; the call-level simulation uses real per-call times. They share placement and travel model, so they are close but not identical.
+
+The response carries both `median_seconds_saved` and `mean_seconds_saved` (top level), and `median_saved_sec` and `mean_saved_sec` in each `by_borough` and `by_svi_quartile` entry. Most calls are in zones no staged unit improves, so the medians are 0 for most slots; the means are the informative figure.
 
 If the model or its history artifacts are missing, the endpoint falls back to the precomputed simulation.
 
@@ -377,7 +387,7 @@ Each preset replays a real 2025 hour with its recorded weather.
 
 | Preset | Replayed hour | Ambulances | What it shows |
 |---|---|---|---|
-| **Fri 8PM Peak** | Fri 2025-10-10, 20:00 | 5 | Bronx and Brooklyn go red, and staging points cluster around the high-demand zones. This is the pitch. |
+| **Fri 8PM Peak** | Fri 2025-10-10, 20:00 | 5 | Bronx and Brooklyn go red. The staging pins fill the largest gaps in station coverage for that demand. This is the pitch. |
 | **Mon 4AM Quiet** | Mon 2025-10-20, 04:00 | 5 | Citywide demand falls to 95 predicted calls/hour, vs 220 on Friday 8PM. The shading is relative to the hour's busiest zone, so compare the totals, not the colors. |
 | **Storm** | Wed 2025-07-30, 18:00 | 7 | The rainiest Wednesday 6 PM of 2025 (8.2 mm/h, heavy rain). Weather feeds both the forecast and the counterfactual's travel times. |
 
@@ -389,7 +399,7 @@ Each preset replays a real 2025 hour with its recorded weather.
 |---|---|---|
 | ML — Demand Forecasting | XGBoost (count:poisson) | 3.2.0 |
 | ML — Explainability | TreeSHAP (built into XGBoost) + matplotlib | 3.2.0 / 3.11 |
-| ML — Staging Optimizer | scikit-learn (K-Means) | 1.8.0 |
+| ML — Staging Optimizer | SciPy MILP (HiGHS) | 1.17 |
 | ML — AI Dispatcher | OpenAI GPT-4o-mini | latest |
 | Spatial Routing | OSMnx + NetworkX | 1.9.1 / 3.3 |
 | Data Processing | DuckDB, pandas, pyarrow | 1.5 / 3.0.1 / 23.0.1 |
@@ -423,7 +433,8 @@ firstwave/
 │   │   ├── demand_forecaster.py    XGBoost inference wrapper (all 31 zones)
 │   │   ├── lag_features.py         Serving-side lag features (parity-tested vs pipeline)
 │   │   ├── replay.py               Replay-date, calendar, and real-weather lookup rules
-│   │   └── staging_optimizer.py    Borough-fair weighted K-Means
+│   │   ├── coverage_model.py       Travel model shared by staging, counterfactual, pipeline 07–08
+│   │   └── staging_optimizer.py    Coverage-optimal staging (exact MILP)
 │   ├── artifacts/              Pre-computed ML artifacts (pkl + parquet + model_metrics.json)
 │   ├── scripts/
 │   │   └── seed_zone_boundaries.py PostGIS seeding
