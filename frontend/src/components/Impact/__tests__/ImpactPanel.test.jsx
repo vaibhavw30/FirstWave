@@ -39,6 +39,12 @@ describe('ImpactPanel', () => {
     expect(screen.getByText('Response Time Distribution')).toBeInTheDocument();
   });
 
+  it('renders the equity impact chart', () => {
+    render(<ImpactPanel data={mockData} isLoading={false} {...overlayProps} />);
+    expect(screen.getByText('Equity Impact')).toBeInTheDocument();
+    expect(screen.getByText('Median Time Saved by SVI Quartile')).toBeInTheDocument();
+  });
+
   it('renders the map overlays panel with the equity toggle', () => {
     const toggleOverlay = vi.fn();
     render(<ImpactPanel data={mockData} isLoading={false} overlays={{ equity: false }} toggleOverlay={toggleOverlay} />);

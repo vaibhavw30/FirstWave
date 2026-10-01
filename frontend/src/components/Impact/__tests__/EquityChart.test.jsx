@@ -28,6 +28,13 @@ describe('EquityChart', () => {
     expect(screen.getByText('Mean Time Saved by SVI Quartile')).toBeInTheDocument();
   });
 
+  it('survives data disappearing after it was shown', () => {
+    const data = { by_svi_quartile: { Q1: { mean_saved_sec: 60 }, Q2: { mean_saved_sec: 60 }, Q3: { mean_saved_sec: 60 }, Q4: { mean_saved_sec: 60 } } };
+    const { rerender, container } = render(<EquityChart data={data} />);
+    expect(() => rerender(<EquityChart data={null} />)).not.toThrow();
+    expect(container.innerHTML).toBe('');
+  });
+
   it('falls back to the median when the mean is missing (mock data)', () => {
     const data = {
       by_svi_quartile: {
